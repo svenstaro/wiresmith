@@ -1,2 +1,1 @@
-# wiremaker
-Auto-config Wireguard clients into a mesh
+# wiresmith - Auto-config Wireguard clients into a mesh
