@@ -1,11 +1,11 @@
 use std::{
     path::Path,
     process::{Child, Command, Stdio},
-    thread::sleep,
     time::{Duration, Instant},
 };
 
 use assert_cmd::prelude::*;
+use tokio::time::sleep;
 
 /// Launch an instance of wiresmith
 ///
@@ -26,17 +26,19 @@ pub fn spawn_wiresmith(
         .arg(endpoint_address)
         .arg("--networkd-dir")
         .arg(dir)
+        .arg("--update-period")
+        .arg("1")
         .stdout(Stdio::null())
         .spawn()
         .expect("Couldn't run wiresmith binary")
 }
 
 /// Wait a max of 3s for the files to become available
-pub fn wait_for_files(files: Vec<&Path>) {
+pub async fn wait_for_files(files: Vec<&Path>) {
     let start_wait = Instant::now();
 
     while !files.iter().all(|x| x.exists()) {
-        sleep(Duration::from_millis(100));
+        sleep(Duration::from_millis(100)).await;
 
         if start_wait.elapsed().as_secs() > 3 {
             panic!("Timeout waiting {files:?} to exist");

@@ -1,15 +1,13 @@
 mod args;
 
-use std::collections::HashSet;
+use std::{collections::HashSet, time::Duration};
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use tracing::{debug, info};
-use wireguard_keys::Privkey;
+use tokio::{task, time::sleep};
+use tracing::{debug, info, trace};
 
-use wiresmith::{
-    consul::ConsulClient, make_new_config, networkd::NetworkdConfiguration, wireguard::WgPeer,
-};
+use wiresmith::{consul::ConsulClient, networkd::NetworkdConfiguration, wireguard::WgPeer};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -68,84 +66,82 @@ async fn main() -> Result<()> {
             &args.wg_interface,
             HashSet::new(),
         )?;
-        make_new_config(
+        networkd_config.write_config(&args.networkd_dir)?;
+        let wg_peer = WgPeer::new(
+            networkd_config.public_key,
             endpoint,
-            &networkd_config,
-            &args.networkd_dir,
-            &consul_client,
-        )
-        .await?;
+            networkd_config.wg_address.addr(),
+        );
+        consul_client.put_config(wg_peer).await?;
     } else {
         info!("Found {} existing peer(s) in Consul", peers.len());
         debug!("Existing peers: {:#?}", peers);
 
-        // let (private_key, public_key) = get_existing_keys(&args.wg_interface)?;
         // Get existing WireGuard private key.
-        if let Ok(networkd_netdev) = freedesktop_entry_parser::parse_entry(
-            args.networkd_dir
-                .join(&args.wg_interface)
-                .with_extension("netdev"),
-        ) {
-            if let Some(private_key_base64) =
-                networkd_netdev.section("WireGuard").attr("PrivateKey")
+        if let Ok(networkd_config) =
+            NetworkdConfiguration::from_config(&args.networkd_dir, &args.wg_interface)
+        {
+            // Try to find own config in Consul.
+            if peers
+                .iter()
+                .find(|x| x.public_key == networkd_config.public_key)
+                .is_none()
             {
-                let private_key = Privkey::from_base64(private_key_base64)?;
-                info!("Found existing WireGuard private key");
-
-                // Derive the public key from the private key and then check whether our own configuration
-                // is already in Consul.
-                let public_key = private_key.pubkey();
-
-                // Try to find own config in Consul.
-                if peers.iter().find(|x| x.public_key == public_key).is_none() {
-                    info!("Existing WireGuard config doesn't yet exist in Consul");
-                    // Send the config to Consul.
-                    let wg_peer = WgPeer {
-                        public_key: private_key.pubkey(),
-                        endpoint,
-                        address: "10.0.0.0/24".parse()?, // TODO
-                    };
-                    consul_client.put_config(wg_peer).await?;
-                    info!("Wrote own WireGuard config to Consul");
-                } else {
-                    info!("Existing WireGuard config already known to Consul")
-                }
+                info!("Existing WireGuard config doesn't yet exist in Consul");
+                // Send the config to Consul.
+                let wg_peer = WgPeer::new(
+                    networkd_config.public_key,
+                    endpoint,
+                    networkd_config.wg_address.addr(),
+                );
+                consul_client.put_config(wg_peer).await?;
+                info!("Wrote own WireGuard config to Consul");
+            } else {
+                info!("Existing WireGuard config already known to Consul")
             }
         } else {
             info!("No existing WireGuard configuration found on system");
 
             let networkd_config =
                 NetworkdConfiguration::new(args.address, args.network, &args.wg_interface, peers)?;
-            make_new_config(
+            networkd_config.write_config(&args.networkd_dir)?;
+            let wg_peer = WgPeer::new(
+                networkd_config.public_key,
                 endpoint,
-                &networkd_config,
-                &args.networkd_dir,
-                &consul_client,
-            )
-            .await?;
+                networkd_config.wg_address.addr(),
+            );
+            consul_client.put_config(wg_peer).await?;
         }
     }
 
     // Enter main loop which periodically checks for updates to the list of WireGuard peers.
-    // let main_loop = task::spawn(async move {
-    //     loop {
-    //         debug!("Checking Consul for peer updates");
-    //         let peers = consul_client
-    //             .get_peers()
-    //             .await
-    //             .expect("Can't fetch existing peers from Consul");
-    //         let peers_networkd = peers_from_networkd(&args.wg_interface)?;
-    //
-    //         // If there is a mismatch, write a new networkd configuration.
-    //         if peers != peers_networkd {
-    //             // let (private_key, _) = get_existing_keys(&args.wg_interface)?;
-    //             // generate_networkd_config(private_key, wg_address, &args.wg_interface, peers)?;
-    //         }
-    //         sleep(Duration::from_secs(args.update_period)).await;
-    //     }
-    // });
-    //
-    // main_loop.await?;
+    let main_loop = task::spawn(async move {
+        loop {
+            trace!("Checking Consul for peer updates");
+            let peers = consul_client
+                .get_peers()
+                .await
+                .expect("Can't fetch existing peers from Consul");
+            let mut networkd_config =
+                NetworkdConfiguration::from_config(&args.networkd_dir, &args.wg_interface)
+                    .expect("Couldn't load existing NetworkdConfiguration from disk");
+
+            // If there is a mismatch, write a new networkd configuration.
+            let diff = networkd_config.peers.difference(&peers).collect::<Vec<_>>();
+            if !diff.is_empty() {
+                info!("Found {} new peer(s) in Consul", diff.len());
+                debug!("New peers: {:#?}", diff);
+
+                networkd_config.peers = peers;
+                networkd_config
+                    .write_config(&args.networkd_dir)
+                    .expect("Couldn't write new NetworkdConfiguration");
+            }
+            sleep(Duration::from_secs(args.update_period)).await;
+        }
+    });
+
+    main_loop.await?;
 
     Ok(())
 }

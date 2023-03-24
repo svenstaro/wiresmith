@@ -146,18 +146,17 @@ AllowedIPs={}\n",
             );
             netdev_file.push_str(&peer_str);
         }
-        fs::write(
-            networkd_dir
-                .join(&self.wg_interface)
-                .with_extension("network"),
-            network_file,
-        )?;
-        fs::write(
-            networkd_dir
-                .join(&self.wg_interface)
-                .with_extension("netdev"),
-            netdev_file,
-        )?;
+        let network_path = networkd_dir
+            .join(&self.wg_interface)
+            .with_extension("network");
+        let netdev_path = networkd_dir
+            .join(&self.wg_interface)
+            .with_extension("netdev");
+
+        fs::write(&network_path, network_file)
+            .context(format!("Couldn't write config to {network_path:?}"))?;
+        fs::write(&netdev_path, netdev_file)
+            .context(format!("Couldn't write config to {netdev_path:?}"))?;
 
         Ok(())
     }
