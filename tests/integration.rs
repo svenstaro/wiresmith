@@ -101,8 +101,8 @@ async fn join_network(
     wait_for_files(vec![network_file_b.as_path(), netdev_file_b.as_path()]).await;
 
     // Wait until the first client has had a chance to pick up the changes and generate a new
-    // config.
-    sleep(Duration::from_secs(20)).await;
+    // config. If this is flaky, increase this number slightly.
+    sleep(Duration::from_secs(1)).await;
 
     let networkd_config_a = NetworkdConfiguration::from_config(&tmpdir_a, "wg0")?;
     let networkd_config_b = NetworkdConfiguration::from_config(&tmpdir_b, "wg0")?;
@@ -111,22 +111,33 @@ async fn join_network(
     assert_eq!(networkd_config_a.wg_address, "10.0.0.1/24".parse()?);
     assert_eq!(networkd_config_b.wg_address, "10.0.0.2/24".parse()?);
 
-    // // Check the config put into Consul.
-    let peers = consul.client.get_peers().await?;
-    let mut expected_peers = HashSet::new();
-    expected_peers.insert(WgPeer {
-        public_key: networkd_config_a.public_key,
-        endpoint: "192.168.0.1:51820".parse().unwrap(),
-        address: "10.0.0.1/32".parse().unwrap(),
-    });
-    expected_peers.insert(WgPeer {
+    // We don't expect to see ourselves in the list of peers as we don't want to peer with
+    // ourselves.
+    let mut expected_peers_a = HashSet::new();
+    expected_peers_a.insert(WgPeer {
         public_key: networkd_config_b.public_key,
         endpoint: "192.168.0.2:51820".parse().unwrap(),
         address: "10.0.0.2/32".parse().unwrap(),
     });
-    assert_eq!(peers, expected_peers);
-    assert_eq!(networkd_config_a.peers, expected_peers);
-    assert_eq!(networkd_config_b.peers, expected_peers);
+
+    let mut expected_peers_b = HashSet::new();
+    expected_peers_b.insert(WgPeer {
+        public_key: networkd_config_a.public_key,
+        endpoint: "192.168.0.1:51820".parse().unwrap(),
+        address: "10.0.0.1/32".parse().unwrap(),
+    });
+    assert_eq!(networkd_config_a.peers, expected_peers_a);
+    assert_eq!(networkd_config_b.peers, expected_peers_b);
+
+    // Peers in Consul should be union the other peer lists.
+    let consul_peers = consul.client.get_peers().await?;
+    let union_peers = networkd_config_a
+        .peers
+        .union(&networkd_config_b.peers)
+        .cloned()
+        .collect::<HashSet<_>>();
+
+    assert_eq!(consul_peers, union_peers);
 
     wiresmith_a.kill()?;
     wiresmith_b.kill()?;

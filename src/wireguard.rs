@@ -7,7 +7,7 @@ use ipnet::IpNet;
 use serde::{Deserialize, Serialize};
 use wireguard_keys::Pubkey;
 
-#[derive(Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct WgPeer {
     pub public_key: Pubkey,
     pub endpoint: SocketAddr,
