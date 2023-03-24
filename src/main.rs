@@ -77,7 +77,6 @@ async fn main() -> Result<()> {
         info!("Found {} existing peer(s) in Consul", peers.len());
         debug!("Existing peers: {:#?}", peers);
 
-        // Get existing WireGuard private key.
         if let Ok(networkd_config) =
             NetworkdConfiguration::from_config(&args.networkd_dir, &args.wg_interface)
         {
@@ -126,8 +125,14 @@ async fn main() -> Result<()> {
                 NetworkdConfiguration::from_config(&args.networkd_dir, &args.wg_interface)
                     .expect("Couldn't load existing NetworkdConfiguration from disk");
 
+            // Exclude own peer config.
+            let peers = peers
+                .into_iter()
+                .filter(|x| x.public_key != networkd_config.public_key)
+                .collect::<HashSet<WgPeer>>();
+
             // If there is a mismatch, write a new networkd configuration.
-            let diff = networkd_config.peers.difference(&peers).collect::<Vec<_>>();
+            let diff = peers.difference(&networkd_config.peers).collect::<Vec<_>>();
             if !diff.is_empty() {
                 info!("Found {} new peer(s) in Consul", diff.len());
                 debug!("New peers: {:#?}", diff);
