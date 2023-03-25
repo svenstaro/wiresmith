@@ -77,16 +77,19 @@ async fn main() -> Result<()> {
         info!("Found {} existing peer(s) in Consul", peers.len());
         debug!("Existing peers: {:#?}", peers);
 
+        // Check whether we can find and parse an existing config.
         if let Ok(networkd_config) =
             NetworkdConfiguration::from_config(&args.networkd_dir, &args.wg_interface)
         {
             // Try to find own config in Consul.
-            if peers
+            let own_peer_is_in_consul = peers
                 .iter()
                 .find(|x| x.public_key == networkd_config.public_key)
-                .is_none()
-            {
+                .is_none();
+
+            if own_peer_is_in_consul {
                 info!("Existing WireGuard config doesn't yet exist in Consul");
+
                 // Send the config to Consul.
                 let wg_peer = WgPeer::new(
                     networkd_config.public_key,
@@ -94,6 +97,7 @@ async fn main() -> Result<()> {
                     networkd_config.wg_address.addr(),
                 );
                 consul_client.put_config(wg_peer).await?;
+
                 info!("Wrote own WireGuard config to Consul");
             } else {
                 info!("Existing WireGuard config already known to Consul")
@@ -101,6 +105,7 @@ async fn main() -> Result<()> {
         } else {
             info!("No existing WireGuard configuration found on system");
 
+            // If we can't find or parse an existing config, we'll just generate a new one.
             let networkd_config =
                 NetworkdConfiguration::new(args.address, args.network, &args.wg_interface, peers)?;
             networkd_config.write_config(&args.networkd_dir)?;
