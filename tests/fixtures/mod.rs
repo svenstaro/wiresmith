@@ -1,13 +1,14 @@
 use std::{
-    process::{Child, Command, Stdio},
-    thread::sleep,
+    process::{Command, Stdio},
     time::{Duration, Instant},
 };
 
+use anyhow::Result;
 use assert_fs::fixture::TempDir;
 use port_check::free_local_port;
 use rstest::fixture;
 
+use tokio::time::sleep;
 use wiresmith::consul::ConsulClient;
 
 /// Get a free port.
@@ -22,27 +23,40 @@ pub fn tmpdir() -> TempDir {
     assert_fs::TempDir::new().expect("Couldn't create a temp dir for tests")
 }
 
-/// Wait a max of 3s for the port to become available
-fn wait_for_port(port: u16) {
+/// Wait for a few seconds for the port to become available
+async fn wait_for_api(consul: &ConsulContainer) -> Result<()> {
     let start_wait = Instant::now();
 
-    while !port_check::is_port_reachable(format!("localhost:{port}")) {
-        sleep(Duration::from_millis(100));
+    loop {
+        let req = consul
+            .client
+            .http_client
+            .get(consul.client.kv_api_base_url.join("/v1/status/leader")?);
+
+        if let Ok(resp) = req.send().await {
+            if resp.status().is_success() {
+                return Ok(());
+            }
+        }
+
+        sleep(Duration::from_millis(100)).await;
 
         if start_wait.elapsed().as_secs() > 3 {
-            panic!("Timeout waiting for port {port}");
+            panic!(
+                "Timeout waiting for Consul API at {}",
+                consul.client.kv_api_base_url
+            );
         }
     }
 }
 
-pub struct Consul {
+pub struct ConsulContainer {
     pub http_port: u16,
     pub client: ConsulClient,
-    child: Child,
 }
 
-impl Consul {
-    fn new(port: u16, child: Child) -> Self {
+impl ConsulContainer {
+    fn new(port: u16) -> Self {
         let client = ConsulClient::new(
             format!("http://localhost:{port}").parse().unwrap(),
             "wiresmith",
@@ -52,14 +66,19 @@ impl Consul {
         Self {
             http_port: port,
             client,
-            child,
         }
     }
 }
-impl Drop for Consul {
+
+impl Drop for ConsulContainer {
     fn drop(&mut self) {
-        self.child.kill().expect("Couldn't kill Consul agent");
-        self.child.wait().unwrap();
+        let container_name = format!("consul-{}", self.http_port);
+        // Using podman, stop all containers with the same testport label.
+        Command::new("podman")
+            .arg("stop")
+            .arg(&container_name)
+            .output()
+            .unwrap_or_else(|_| panic!("Error trying to run podman stop {}", container_name));
     }
 }
 
@@ -68,7 +87,7 @@ impl Drop for Consul {
 /// Start with a free port and some optional arguments then wait for a while for the server setup
 /// to complete.
 #[fixture]
-pub fn consul<I>(#[default(&[] as &[&str])] args: I) -> Consul
+pub async fn consul<I>(#[default(&[] as &[&str])] args: I) -> ConsulContainer
 where
     I: IntoIterator + Clone,
     I::Item: AsRef<std::ffi::OsStr>,
@@ -76,9 +95,23 @@ where
     let http_port = port();
     let serf_lan_port = port();
     let server_port = port();
-    let child = Command::new("consul")
+    Command::new("podman")
+        .arg("run")
+        .arg("--name")
+        .arg(format!("consul-{http_port}"))
+        .arg("--replace")
+        .arg("--rm")
+        .arg("--label")
+        .arg("testcontainer")
+        .arg("-p")
+        .arg(format!("{http_port}:{http_port}"))
+        .arg("-l")
+        .arg(format!("testport={http_port}"))
+        .arg("docker.io/hashicorp/consul")
         .arg("agent")
         .arg("-dev")
+        .arg("-client")
+        .arg("0.0.0.0")
         .arg("-http-port")
         .arg(http_port.to_string())
         .arg("-grpc-port")
@@ -98,7 +131,10 @@ where
         .spawn()
         .expect("Couldn't run Consul binary");
 
-    wait_for_port(http_port);
+    let consul = ConsulContainer::new(http_port);
+    wait_for_api(&consul)
+        .await
+        .expect("Error while waiting for Consul API");
     println!("Started Consul with HTTP port {http_port}");
-    Consul::new(http_port, child)
+    consul
 }

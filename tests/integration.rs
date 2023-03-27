@@ -3,23 +3,33 @@ mod utils;
 
 use std::{collections::HashSet, time::Duration};
 
-use anyhow::Result;
+use anyhow::{ensure, Result};
 use assert_fs::TempDir;
-use fixtures::{consul, tmpdir, Consul};
+use configparser::ini::Ini;
+use fixtures::{consul, tmpdir, ConsulContainer};
 use rstest::rstest;
-use tokio::time::sleep;
+use tokio::{process::Command, time::sleep};
 use wireguard_keys::Privkey;
 use wiresmith::{networkd::NetworkdConfiguration, wireguard::WgPeer};
 
-use crate::{utils::spawn_wiresmith, utils::wait_for_files};
+use crate::{utils::wait_for_files, utils::WiresmithContainer};
 
 /// An initial configuration with a single peer is created in case no existing peers are found.
 /// The address of the peer is not explicitly provided. Instead, the first free address inside the
 /// network is used.
 #[rstest]
 #[tokio::test]
-async fn initial_configuration(consul: Consul, tmpdir: TempDir) -> Result<()> {
-    let mut wiresmith = spawn_wiresmith("10.0.0.0/24", "192.168.0.1", consul.http_port, &tmpdir);
+async fn initial_configuration(#[future] consul: ConsulContainer, tmpdir: TempDir) -> Result<()> {
+    let consul = consul.await;
+
+    let wiresmith = WiresmithContainer::new(
+        "initial",
+        "10.0.0.0/24",
+        "192.168.0.1",
+        consul.http_port,
+        &tmpdir,
+    )
+    .await;
 
     let network_file = tmpdir.join("wg0.network");
     let netdev_file = tmpdir.join("wg0.netdev");
@@ -57,6 +67,50 @@ async fn initial_configuration(consul: Consul, tmpdir: TempDir) -> Result<()> {
             .unwrap(),
     )?;
 
+    // Check whether the interface was configured correctly.
+    let networkctl_output = Command::new("podman")
+        .arg("exec")
+        .arg(&wiresmith.container_name)
+        .arg("networkctl")
+        .arg("status")
+        .arg("wg0")
+        .output()
+        .await?;
+    ensure!(
+        networkctl_output.stderr.is_empty(),
+        "Error running networkctl: {}",
+        String::from_utf8_lossy(&networkctl_output.stderr)
+    );
+    let wg_showconf_output = Command::new("podman")
+        .arg("exec")
+        .arg(&wiresmith.container_name)
+        .arg("wg")
+        .arg("showconf")
+        .arg("wg0")
+        .output()
+        .await?;
+    ensure!(
+        wg_showconf_output.stderr.is_empty(),
+        "Error running wg showconf: {}",
+        String::from_utf8_lossy(&wg_showconf_output.stderr)
+    );
+    dbg!(String::from_utf8_lossy(&wg_showconf_output.stdout));
+    let mut wg_config = Ini::new();
+    wg_config
+        .read(String::from_utf8_lossy(&wg_showconf_output.stdout).to_string())
+        .expect("Couldn't parse WireGuard config");
+    assert_eq!(wg_config.get("Interface", "ListenPort").unwrap(), "51820");
+    assert_eq!(
+        wg_config.get("Interface", "PrivateKey").unwrap(),
+        private_key.to_base64()
+    );
+
+    // There should be no peers here yet.
+    assert!(!wg_config.sections().contains(&"Peer".to_string()));
+    // assert_eq!(wg_showconf_entry.section("Peer").attr("PublicKey").unwrap(),private_key.pubkey());
+    // assert_eq!(wg_showconf_entry.section("Peer").attr("AllowedIPs").unwrap(),"lol");
+    // assert_eq!(wg_showconf_entry.section("Peer").attr("Endpoint").unwrap(),"lol");
+
     // Check the config put into Consul.
     let peers = consul.client.get_peers().await?;
     let mut expected_peers = HashSet::new();
@@ -67,8 +121,6 @@ async fn initial_configuration(consul: Consul, tmpdir: TempDir) -> Result<()> {
     });
     assert_eq!(peers, expected_peers);
 
-    wiresmith.kill()?;
-
     Ok(())
 }
 
@@ -78,12 +130,20 @@ async fn initial_configuration(consul: Consul, tmpdir: TempDir) -> Result<()> {
 #[rstest]
 #[tokio::test]
 async fn join_network(
-    consul: Consul,
+    #[future] consul: ConsulContainer,
     #[from(tmpdir)] tmpdir_a: TempDir,
     #[from(tmpdir)] tmpdir_b: TempDir,
 ) -> Result<()> {
-    let mut wiresmith_a =
-        spawn_wiresmith("10.0.0.0/24", "192.168.0.1", consul.http_port, &tmpdir_a);
+    let consul = consul.await;
+
+    let _wiresmith_a = WiresmithContainer::new(
+        "a",
+        "10.0.0.0/24",
+        "192.168.0.1",
+        consul.http_port,
+        &tmpdir_a,
+    )
+    .await;
 
     let network_file_a = tmpdir_a.join("wg0.network");
     let netdev_file_a = tmpdir_a.join("wg0.netdev");
@@ -92,8 +152,14 @@ async fn join_network(
 
     // Start the second peer after the first one has generated its files so we don't run into race
     // conditions with address allocation.
-    let mut wiresmith_b =
-        spawn_wiresmith("10.0.0.0/24", "192.168.0.2", consul.http_port, &tmpdir_b);
+    let _wiresmith_b = WiresmithContainer::new(
+        "b",
+        "10.0.0.0/24",
+        "192.168.0.2",
+        consul.http_port,
+        &tmpdir_b,
+    )
+    .await;
 
     let network_file_b = tmpdir_b.join("wg0.network");
     let netdev_file_b = tmpdir_b.join("wg0.netdev");
@@ -104,8 +170,8 @@ async fn join_network(
     // config. If this is flaky, increase this number slightly.
     sleep(Duration::from_secs(1)).await;
 
-    let networkd_config_a = NetworkdConfiguration::from_config(&tmpdir_a, "wg0")?;
-    let networkd_config_b = NetworkdConfiguration::from_config(&tmpdir_b, "wg0")?;
+    let networkd_config_a = NetworkdConfiguration::from_config(&tmpdir_a, "wg0").await?;
+    let networkd_config_b = NetworkdConfiguration::from_config(&tmpdir_b, "wg0").await?;
 
     // Check the networkd files of the first peer.
     assert_eq!(networkd_config_a.wg_address, "10.0.0.1/24".parse()?);
@@ -138,9 +204,6 @@ async fn join_network(
         .collect::<HashSet<_>>();
 
     assert_eq!(consul_peers, union_peers);
-
-    wiresmith_a.kill()?;
-    wiresmith_b.kill()?;
 
     Ok(())
 }

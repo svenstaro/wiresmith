@@ -8,6 +8,7 @@ use reqwest::{
 };
 use serde::Deserialize;
 use tracing::info;
+use wireguard_keys::Pubkey;
 
 use crate::wireguard::WgPeer;
 
@@ -50,7 +51,7 @@ impl ConsulClient {
             let mut headers = HeaderMap::new();
             headers.insert(
                 HeaderName::from_static("X-Consul-Token"),
-                HeaderValue::from_str(&secret_token)?,
+                HeaderValue::from_str(secret_token)?,
             );
             client_builder.default_headers(headers)
         } else {
@@ -112,6 +113,21 @@ impl ConsulClient {
             .await?
             .error_for_status()?;
         info!("Wrote node config into Consul");
+        Ok(())
+    }
+
+    /// Remove a peer config from Consul
+    #[tracing::instrument(skip(self, public_key))]
+    pub async fn delete_config(&self, public_key: Pubkey) -> Result<()> {
+        self.http_client
+            .delete(self.kv_api_base_url.join(&public_key.to_base64_urlsafe())?)
+            .send()
+            .await?
+            .error_for_status()?;
+        info!(
+            "Deleted peer {} config from Consul",
+            public_key.to_base64_urlsafe()
+        );
         Ok(())
     }
 }

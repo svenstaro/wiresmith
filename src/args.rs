@@ -1,4 +1,4 @@
-use std::{net::IpAddr, path::PathBuf};
+use std::{net::IpAddr, path::PathBuf, time::Duration};
 
 use clap::{Parser, ValueEnum};
 use ipnet::IpNet;
@@ -27,8 +27,8 @@ pub struct CliArgs {
     pub consul_prefix: String,
 
     /// Update period - how often to check for peer updates in seconds
-    #[arg(short, long, default_value = "10")]
-    pub update_period: u64,
+    #[arg(short, long, default_value = "10", value_parser = duration_seconds)]
+    pub update_period: Duration,
 
     /// WireGuard interface name
     #[arg(short = 'i', long, default_value = "wg0")]
@@ -37,6 +37,12 @@ pub struct CliArgs {
     /// WireGuard UDP listen port
     #[arg(short = 'p', long, default_value = "51820")]
     pub wg_port: u16,
+
+    /// Remove disconnected peers after this many minutes
+    ///
+    /// Set to 0 in order to disable.
+    #[arg(short = 't', long, default_value = "10", value_parser = duration_minutes)]
+    pub peer_timeout: Duration,
 
     /// Public endpoint interface name
     ///
@@ -50,13 +56,14 @@ pub struct CliArgs {
 
     /// Public endpoint address
     ///
+    /// Can be a hostname or IP address.
     /// You need to provide either this or --endpoint-interface.
     #[arg(
         long,
         required_unless_present = "endpoint_interface",
         conflicts_with = "endpoint_interface"
     )]
-    pub endpoint_address: Option<IpAddr>,
+    pub endpoint_address: Option<String>,
 
     /// Network configuration backend
     #[arg(long, default_value = "networkd")]
@@ -94,4 +101,14 @@ fn network_interface(s: &str) -> Result<NetworkInterface, String> {
         Some(i) => Ok(i.clone()),
         None => Err(format!("No usable interface found for '{}'", s)),
     }
+}
+
+fn duration_seconds(s: &str) -> Result<Duration, String> {
+    let dur: u64 = s.parse().map_err(|_| format!("Invalid number: {s}"))?;
+    Ok(Duration::from_secs(dur))
+}
+
+fn duration_minutes(s: &str) -> Result<Duration, String> {
+    let dur: u64 = s.parse().map_err(|_| format!("Invalid number: {s}"))?;
+    Ok(Duration::from_secs(dur * 60))
 }
