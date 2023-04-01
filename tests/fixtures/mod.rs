@@ -41,7 +41,8 @@ async fn wait_for_api(consul: &ConsulContainer) -> Result<()> {
 
         sleep(Duration::from_millis(100)).await;
 
-        if start_wait.elapsed().as_secs() > 3 {
+        // It could take a few seconds on the initial pull or on CI.
+        if start_wait.elapsed().as_secs() > 15 {
             panic!(
                 "Timeout waiting for Consul API at {}",
                 consul.client.kv_api_base_url
