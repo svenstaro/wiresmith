@@ -19,6 +19,9 @@ jobs:
           override: true
           components: rustfmt, clippy
 
+      - name: Pull images
+        run: podman pull docker.io/hashicorp/consul docker.io/archlinux
+
       - name: cargo build
         uses: actions-rs/cargo@v1
         with:
