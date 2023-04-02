@@ -12,15 +12,15 @@ it will create a self-maintaining mesh network using WireGuard.
 You choose to let it figure out the addresses by itself or provide static addresses yourself. It
 can also clean up dead peers if desired.
 
-IPv4 and IPv6 are fully supported.
+## Features
 
-Currently supported value store backends:
-
-- Consul
-
-Currently supported network configuration backends:
-
-- systemd-networkd
+- Automatic address allocation
+- Mesh connectivity
+- IPv4/IPv6
+- Value store backends: Consul
+- Network configuration backends: systemd-networkd
+- Cleanup of dead peers
+- Pretty logging!
 
 ## How to use
 
