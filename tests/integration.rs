@@ -197,13 +197,13 @@ async fn join_network(
 
     // Peers in Consul should be union the other peer lists.
     let consul_peers = consul.client.get_peers().await?;
-    let union_peers = networkd_config_a
+    let expected_peers = networkd_config_a
         .peers
         .union(&networkd_config_b.peers)
         .cloned()
         .collect::<HashSet<_>>();
 
-    assert_eq!(consul_peers, union_peers);
+    assert_eq!(consul_peers, expected_peers);
 
     Ok(())
 }
