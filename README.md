@@ -152,7 +152,7 @@ instance of `wiresmith` in each of them so you can watch them and see how they i
 This is mostly a note for me on how to release this thing:
 
 - Make sure `CHANGELOG.md` is up to date.
-- `cargo release --dry-run <version>`
 - `cargo release <version>`
+- `cargo release --execute <version>`
 - OCI images and binaries will automatically be deployed by Github Actions.
 - Update Arch package.
