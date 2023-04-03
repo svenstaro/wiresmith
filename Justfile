@@ -1,3 +1,7 @@
+prepare-test:
+    podman pull docker.io/hashicorp/consul docker.io/archlinux
+    podman build -f Containerfile.testing --tag wiresmith-testing
+
 test:
     cargo test
 
