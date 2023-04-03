@@ -107,6 +107,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
+      - name: Install qemu-user-static
+        run: sudo apt -y install qemu-user-static
+
       - name: Download artifact aarch64-unknown-linux-gnu
         uses: actions/download-artifact@v3
         with:
