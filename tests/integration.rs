@@ -168,7 +168,7 @@ async fn join_network(
 
     // Wait until the first client has had a chance to pick up the changes and generate a new
     // config. If this is flaky, increase this number slightly.
-    sleep(Duration::from_secs(1)).await;
+    sleep(Duration::from_secs(2)).await;
 
     let networkd_config_a = NetworkdConfiguration::from_config(&tmpdir_a, "wg0").await?;
     let networkd_config_b = NetworkdConfiguration::from_config(&tmpdir_b, "wg0").await?;
