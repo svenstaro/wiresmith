@@ -7,6 +7,23 @@ use std::{
 use anyhow::Result;
 use tokio::{process::Command, time::sleep};
 
+/// Wait a few seconds for the files to become available
+pub async fn wait_for_files(files: Vec<&Path>) {
+    let start_time = Instant::now();
+
+    while !files.iter().all(|x| x.exists()) {
+        sleep(Duration::from_millis(100)).await;
+
+        if start_time.elapsed().as_secs() > 3 {
+            panic!("Timeout waiting {files:?} to exist");
+        }
+    }
+    println!(
+        "Files available after waiting for {:?}",
+        start_time.elapsed()
+    );
+}
+
 pub struct WiresmithContainer {
     /// Full unique container_name
     ///
@@ -110,23 +127,10 @@ impl Drop for WiresmithContainer {
 
         // Using podman, stop all containers with the same testport label.
         Command::new("podman")
-            .arg("stop")
+            .arg("kill")
             .arg(&self.container_name)
             .output()
-            .unwrap_or_else(|_| panic!("Error trying to run podman stop {}", self.container_name));
-    }
-}
-
-/// Wait a few seconds for the files to become available
-pub async fn wait_for_files(files: Vec<&Path>) {
-    let start_wait = Instant::now();
-
-    while !files.iter().all(|x| x.exists()) {
-        sleep(Duration::from_millis(100)).await;
-
-        if start_wait.elapsed().as_secs() > 3 {
-            panic!("Timeout waiting {files:?} to exist");
-        }
+            .unwrap_or_else(|_| panic!("Error trying to run podman kill {}", self.container_name));
     }
 }
 

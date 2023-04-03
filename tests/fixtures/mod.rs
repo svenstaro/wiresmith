@@ -76,10 +76,10 @@ impl Drop for ConsulContainer {
         let container_name = format!("consul-{}", self.http_port);
         // Using podman, stop all containers with the same testport label.
         Command::new("podman")
-            .arg("stop")
+            .arg("kill")
             .arg(&container_name)
             .output()
-            .unwrap_or_else(|_| panic!("Error trying to run podman stop {}", container_name));
+            .unwrap_or_else(|_| panic!("Error trying to run podman kill {}", container_name));
     }
 }
 
