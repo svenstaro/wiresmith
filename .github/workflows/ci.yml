@@ -15,34 +15,19 @@ jobs:
         run: curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | sudo bash -s -- --to /usr/bin
 
       - name: Setup Rust toolchain
-        uses: FrancisRussell/ferrous-actions@v0.1.0-beta.2
-        with:
-          command: install-rustup
-          toolchain: stable
-          profile: minimal
-          default: true
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Prepare test
         run: just prepare-test
 
       - name: cargo build
-        uses: FrancisRussell/ferrous-actions@v0.1.0-beta.2
-        with:
-          command: cargo build
+        run: cargo build
 
       - name: cargo test
-        uses: FrancisRussell/ferrous-actions@v0.1.0-beta.2
-        with:
-          command: cargo test
+        run: cargo test
 
       - name: cargo fmt
-        uses: FrancisRussell/ferrous-actions@v0.1.0-beta.2
-        with:
-          command: cargo fmt
-          args: --all -- --check
+        run: cargo fmt --all -- --check
 
       - name: cargo clippy
-        uses: FrancisRussell/ferrous-actions@v0.1.0-beta.2
-        with:
-          command: cargo clippy
-          args: -- -D warnings
+        run: cargo clippy -- -D warnings
