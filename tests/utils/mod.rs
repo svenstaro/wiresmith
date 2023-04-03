@@ -65,9 +65,7 @@ impl WiresmithContainer {
             .arg(format!("{}:/etc/systemd/network", dir.to_string_lossy()))
             .arg("--tz")
             .arg("UTC")
-            .arg("--entrypoint")
-            .arg("/sbin/init")
-            .arg("docker.io/archlinux")
+            .arg("wiresmith-testing")
             .stdout(Stdio::null())
             .spawn()
             .expect("Couldn't run systemd in podman");
@@ -75,29 +73,6 @@ impl WiresmithContainer {
         wait_for_systemd(&container_name)
             .await
             .expect("Error while waiting for systemd container");
-
-        // Install wireguard-tools.
-        Command::new("podman")
-            .arg("exec")
-            .arg(&container_name)
-            .arg("pacman")
-            .arg("-Sy")
-            .arg("--noconfirm")
-            .arg("wireguard-tools")
-            .output()
-            .await
-            .expect("Couldn't install wireguard-tools in container");
-
-        // Next, make sure that systemd-networkd is running inside.
-        Command::new("podman")
-            .arg("exec")
-            .arg(&container_name)
-            .arg("systemctl")
-            .arg("start")
-            .arg("systemd-networkd")
-            .output()
-            .await
-            .expect("Couldn't run systemd-networkd in podman");
 
         // Lastly, start wiresmith itself.
         Command::new("podman")
