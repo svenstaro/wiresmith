@@ -11,35 +11,38 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Setup Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-          components: rustfmt, clippy
+      - name: Install just
+        run: curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/bin
 
-      - name: Pull images
-        run: podman pull docker.io/hashicorp/consul docker.io/archlinux
+      - name: Setup Rust toolchain
+        uses: FrancisRussell/ferrous-actions@v0.1.0-beta.2
+        with:
+          command: install-rustup
+          toolchain: stable
+          profile: minimal
+          default: true
+
+      - name: Prepare test
+        run: just prepare-test
 
       - name: cargo build
-        uses: actions-rs/cargo@v1
+        uses: FrancisRussell/ferrous-actions@v0.1.0-beta.2
         with:
-          command: build
+          command: cargo build
 
       - name: cargo test
-        uses: actions-rs/cargo@v1
+        uses: FrancisRussell/ferrous-actions@v0.1.0-beta.2
         with:
-          command: test
+          command: cargo test
 
       - name: cargo fmt
-        uses: actions-rs/cargo@v1
+        uses: FrancisRussell/ferrous-actions@v0.1.0-beta.2
         with:
-          command: fmt
+          command: cargo fmt
           args: --all -- --check
 
       - name: cargo clippy
-        uses: actions-rs/cargo@v1
+        uses: FrancisRussell/ferrous-actions@v0.1.0-beta.2
         with:
-          command: clippy
+          command: cargo clippy
           args: -- -D warnings
