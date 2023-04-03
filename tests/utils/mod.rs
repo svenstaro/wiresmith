@@ -87,6 +87,8 @@ impl WiresmithContainer {
             .arg(endpoint_address)
             .arg("--update-period")
             .arg("1")
+            // To diagnose issues, it's sometimes helpful to comment out the following line so that
+            // we can see log output from the wiresmith instances inside the containers.
             .stdout(Stdio::null())
             .spawn()
             .expect("Couldn't run systemd in podman");
@@ -111,7 +113,7 @@ impl Drop for WiresmithContainer {
 
 /// Wait a few seconds for systemd to boot
 async fn wait_for_systemd(container_name: &str) -> Result<()> {
-    let start_wait = Instant::now();
+    let start_time = Instant::now();
 
     loop {
         let output = Command::new("podman")
@@ -124,12 +126,16 @@ async fn wait_for_systemd(container_name: &str) -> Result<()> {
         // "degraded" is good enough for us, it just means that at least one unit has failed to
         // start but we don't usually care about that.
         if output.stdout.starts_with(b"degraded") || output.stdout.starts_with(b"running") {
+            println!(
+                "Test container '{container_name}' took {:?} to start",
+                start_time.elapsed()
+            );
             return Ok(());
         }
 
         sleep(Duration::from_millis(100)).await;
 
-        if start_wait.elapsed().as_secs() > 10 {
+        if start_time.elapsed().as_secs() > 10 {
             dbg!(output);
             panic!("Timeout waiting for systemd container {container_name}",);
         }

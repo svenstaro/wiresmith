@@ -41,7 +41,6 @@ async fn wait_for_api(consul: &ConsulContainer) -> Result<()> {
 
         sleep(Duration::from_millis(100)).await;
 
-        // It could take a few seconds on the initial pull or on CI.
         if start_wait.elapsed().as_secs() > 15 {
             panic!(
                 "Timeout waiting for Consul API at {}",
@@ -93,6 +92,8 @@ where
     I: IntoIterator + Clone,
     I::Item: AsRef<std::ffi::OsStr>,
 {
+    let start_time = Instant::now();
+
     let http_port = port();
     let serf_lan_port = port();
     let server_port = port();
@@ -136,6 +137,9 @@ where
     wait_for_api(&consul)
         .await
         .expect("Error while waiting for Consul API");
-    println!("Started Consul with HTTP port {http_port}");
+    println!(
+        "Started Consul after {:?} on HTTP port {http_port}",
+        start_time.elapsed()
+    );
     consul
 }
