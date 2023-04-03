@@ -40,6 +40,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
+      - name: Install qemu-user-static
+        run: apt -y install qemu-user-static
+
       - name: Setup Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
