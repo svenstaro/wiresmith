@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+- Fix broken timeout mechanism
+- Fix binary and image releases
 
 ## [0.1.0] - 2023-04-03
 - Initial release
