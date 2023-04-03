@@ -107,9 +107,6 @@ async fn initial_configuration(#[future] consul: ConsulContainer, tmpdir: TempDi
 
     // There should be no peers here yet.
     assert!(!wg_config.sections().contains(&"Peer".to_string()));
-    // assert_eq!(wg_showconf_entry.section("Peer").attr("PublicKey").unwrap(),private_key.pubkey());
-    // assert_eq!(wg_showconf_entry.section("Peer").attr("AllowedIPs").unwrap(),"lol");
-    // assert_eq!(wg_showconf_entry.section("Peer").attr("Endpoint").unwrap(),"lol");
 
     // Check the config put into Consul.
     let peers = consul.client.get_peers().await?;
@@ -119,6 +116,8 @@ async fn initial_configuration(#[future] consul: ConsulContainer, tmpdir: TempDi
         endpoint: "192.168.0.1:51820".parse().unwrap(),
         address: "10.0.0.1/32".parse().unwrap(),
     });
+
+    // Now there should be peers.
     assert_eq!(peers, expected_peers);
 
     Ok(())
