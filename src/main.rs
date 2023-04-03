@@ -1,6 +1,9 @@
 mod args;
 
-use std::{collections::HashSet, time::Duration};
+use std::{
+    collections::HashSet,
+    time::{Duration, Instant},
+};
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -83,6 +86,11 @@ async fn main() -> Result<()> {
 
     // Enter main loop which periodically checks for updates to the list of WireGuard peers.
     let main_loop = task::spawn(async move {
+        // To make sure we give new peers a chance to send handshakes, we need to debounce
+        // timeout removals.
+        let mut last_timeout_removal = Instant::now();
+        let timeout_debounce = Duration::from_secs(60);
+
         loop {
             trace!("Checking Consul for peer updates");
             let peers = consul_client
@@ -94,7 +102,9 @@ async fn main() -> Result<()> {
                     .await
                     .expect("Couldn't load existing NetworkdConfiguration from disk");
 
-            if args.peer_timeout >= Duration::ZERO {
+            if args.peer_timeout > Duration::ZERO
+                && last_timeout_removal.elapsed() > timeout_debounce
+            {
                 let handshakes = latest_handshakes(&args.wg_interface)
                     .await
                     .expect("Couldn't get list of handshakes from WireGuard");
@@ -112,6 +122,7 @@ async fn main() -> Result<()> {
                                 .delete_config(pubkey)
                                 .await
                                 .expect("Couldn't delete peer from Consul");
+                            last_timeout_removal = Instant::now();
                         }
                     }
                 }
