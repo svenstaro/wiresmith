@@ -158,19 +158,3 @@ jobs:
       - name: podman manifest push tag version
         run: podman manifest push wiresmith ghcr.io/svenstaro/wiresmith:${{ needs.publish.outputs.version }}
         if: startsWith(github.ref_name, 'v')
-
-      - name: podman build linux/arm64 (alpine edition)
-        run: podman build --format docker --platform linux/arm64/v8 --manifest wiresmith-alpine -f Containerfile.alpine target/aarch64-unknown-linux-musl/release
-
-      - name: podman build linux/amd64 (alpine edition)
-        run: podman build --format docker --platform linux/amd64 --manifest wiresmith-alpine -f Containerfile.alpine target/x86_64-unknown-linux-musl/release
-
-      - name: podman build linux/arm (alpine edition)
-        run: podman build --format docker --platform linux/arm/v7 --manifest wiresmith-alpine -f Containerfile.alpine target/armv7-unknown-linux-musleabihf/release
-
-      - name: podman manifest push latest (alpine edition)
-        run: podman manifest push wiresmith-alpine ghcr.io/svenstaro/wiresmith:alpine
-
-      - name: podman manifest push tag version (alpine edition)
-        run: podman manifest push wiresmith-alpine ghcr.io/svenstaro/wiresmith:${{ needs.publish.outputs.version }}-alpine
-        if: startsWith(github.ref_name, 'v')

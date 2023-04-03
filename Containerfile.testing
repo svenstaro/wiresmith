@@ -1,0 +1,8 @@
+# This image is only used as a testing environment for wiresmith.
+FROM docker.io/archlinux
+RUN pacman -Sy --noconfirm wireguard-tools
+# Run systemd-networkd on start
+RUN mkdir /etc/systemd/system/multi-user.target.wants/ && \
+    ln -s /usr/lib/systemd/system/systemd-networkd.service /etc/systemd/system/multi-user.target.wants/systemd-networkd.service
+# Set systemd to run as entrypoint
+ENTRYPOINT ["/sbin/init"]

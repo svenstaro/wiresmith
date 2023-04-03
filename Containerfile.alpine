@@ -1,3 +1,0 @@
-FROM docker.io/alpine
-COPY --chmod=755 wiresmith /app/
-ENTRYPOINT ["/app/wiresmith"]
