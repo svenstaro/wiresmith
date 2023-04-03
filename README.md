@@ -141,7 +141,13 @@ You can also use the provided systemd service.
 
 ## Development
 
-This project uses Podman in rootless mode to facilitate rapid local testing.
+This project uses Podman in rootless mode to facilitate rapid local testing. Before starting a
+development session, run
+
+    just prepare-test
+
+to make sure you have the necessary images.
+
 Make sure you have [just](https://github.com/casey/just) and [zellij](https://zellij.dev/)
 installed locally and then run either `just test` for automatic testing or `just interactive` for
 interactive testing. The interactive session will spawn two systemds in containers and then run one
