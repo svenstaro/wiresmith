@@ -14,6 +14,7 @@ can also clean up dead peers if desired.
 
 ## Features
 
+- Simple usage
 - Automatic address allocation
 - Mesh connectivity
 - IPv4/IPv6
