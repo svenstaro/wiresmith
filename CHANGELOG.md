@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+- Validate address is inside network
 
 ## [0.1.2] - 2023-04-03
 - Fix broken timeout mechanism
