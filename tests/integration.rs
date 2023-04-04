@@ -14,6 +14,34 @@ use wiresmith::{networkd::NetworkdConfiguration, wireguard::WgPeer};
 
 use crate::{utils::wait_for_files, utils::WiresmithContainer};
 
+/// If the address is provided explicitly, it needs to be contained within network.
+#[rstest]
+#[case("10.0.0.0/24", "10.0.0.1", true)]
+#[case("10.0.0.0/24", "10.0.1.1", false)]
+#[tokio::test]
+async fn address_contained_within_network(
+    #[case] network: &str,
+    #[case] address: &str,
+    #[case] success: bool,
+) -> Result<()> {
+    let output = assert_cmd::Command::cargo_bin("wiresmith")?
+        .arg("--network")
+        .arg(network)
+        .arg("--address")
+        .arg(address)
+        .arg("--endpoint-address")
+        .arg("dontcare")
+        .output()?;
+    if !success {
+        assert_eq!(
+            String::from_utf8_lossy(&output.stderr),
+            format!("Error: Address {address} is not part of network {network}\n")
+        );
+    }
+
+    Ok(())
+}
+
 /// An initial configuration with a single peer is created in case no existing peers are found.
 /// The address of the peer is not explicitly provided. Instead, the first free address inside the
 /// network is used.

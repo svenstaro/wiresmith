@@ -5,7 +5,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::{Context, Result};
+use anyhow::{ensure, Context, Result};
 use clap::Parser;
 use tokio::{task, time::sleep};
 use tracing::{debug, info, trace};
@@ -29,6 +29,14 @@ async fn main() -> Result<()> {
             .with_env_filter("wiresmith=info")
             .init();
     };
+
+    if let Some(address) = args.address {
+        ensure!(
+            args.network.contains(&address),
+            "Address {address} is not part of network {}",
+            args.network
+        );
+    }
 
     let consul_client = ConsulClient::new(
         args.consul_address,
