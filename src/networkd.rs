@@ -3,7 +3,7 @@ use std::{
     path::Path,
 };
 
-use anyhow::{ensure, Context, Result};
+use anyhow::{anyhow, Context, Result};
 use file_owner::set_group;
 use ipnet::IpNet;
 use tokio::{fs, process::Command};
@@ -190,10 +190,16 @@ PersistentKeepalive=25\n",
             .arg("systemd-networkd")
             .output()
             .await?;
-        ensure!(
-            restart_output.status.success(),
-            "Failed to restart systemd-networkd"
-        );
+        if !restart_output.status.success() {
+            let stderr = String::from_utf8_lossy(&restart_output.stderr);
+            let journalctl_output = Command::new("journalctl")
+                .arg("-u")
+                .arg("systemd-networkd")
+                .output()
+                .await?;
+            let journalctl_stdout = String::from_utf8_lossy(&journalctl_output.stdout);
+            return Err(anyhow!("Failed to restart systemd-networkd: {stderr}\njournalctl -u systemd-networkd: {journalctl_stdout}"));
+        }
         Ok(())
     }
 }

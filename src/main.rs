@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::{ensure, Context, Result};
 use clap::Parser;
-use tokio::{task, time::sleep};
+use tokio::time::sleep;
 use tracing::{debug, info, trace};
 
 use wiresmith::{
@@ -93,105 +93,103 @@ async fn main() -> Result<()> {
     NetworkdConfiguration::restart().await?;
 
     // Enter main loop which periodically checks for updates to the list of WireGuard peers.
-    let main_loop = task::spawn(async move {
-        // To make sure we give new peers a chance to send handshakes, we need to debounce
-        // timeout removals.
-        let mut last_timeout_removal = Instant::now();
-        let timeout_debounce = Duration::from_secs(60);
+    // To make sure we give new peers a chance to send handshakes, we need to debounce
+    // timeout removals.
+    let mut last_timeout_removal = Instant::now();
+    let timeout_debounce = Duration::from_secs(60);
 
-        loop {
-            trace!("Checking Consul for peer updates");
-            let peers = consul_client
-                .get_peers()
+    loop {
+        trace!("Checking Consul for peer updates");
+        let peers = consul_client
+            .get_peers()
+            .await
+            .expect("Can't fetch existing peers from Consul");
+        let mut networkd_config =
+            NetworkdConfiguration::from_config(&args.networkd_dir, &args.wg_interface)
                 .await
-                .expect("Can't fetch existing peers from Consul");
-            let mut networkd_config =
-                NetworkdConfiguration::from_config(&args.networkd_dir, &args.wg_interface)
-                    .await
-                    .expect("Couldn't load existing NetworkdConfiguration from disk");
+                .expect("Couldn't load existing NetworkdConfiguration from disk");
 
-            if args.peer_timeout > Duration::ZERO
-                && last_timeout_removal.elapsed() > timeout_debounce
-            {
-                let handshakes = latest_handshakes(&args.wg_interface)
-                    .await
-                    .expect("Couldn't get list of handshakes from WireGuard");
-                for (pubkey, latest_handshake) in handshakes {
-                    // This can fail due to clock drift and potentially it could be a negative
-                    // value. In that case, we just do nothing in that particular iteration.
-                    if let Ok(elapsed) = latest_handshake.elapsed() {
-                        if elapsed >= args.peer_timeout {
-                            info!(
-                                "Peer {} has exceeded timeout of {:?}, deleting",
-                                pubkey.to_base64_urlsafe(),
-                                args.peer_timeout
-                            );
-                            consul_client
-                                .delete_config(pubkey)
-                                .await
-                                .expect("Couldn't delete peer from Consul");
-                            last_timeout_removal = Instant::now();
-                        }
+        if args.peer_timeout > Duration::ZERO && last_timeout_removal.elapsed() > timeout_debounce {
+            let handshakes = latest_handshakes(&args.wg_interface)
+                .await
+                .expect("Couldn't get list of handshakes from WireGuard");
+            for (pubkey, latest_handshake) in handshakes {
+                // This can fail due to clock drift and potentially it could be a negative
+                // value. In that case, we just do nothing in that particular iteration.
+                if let Ok(elapsed) = latest_handshake.elapsed() {
+                    if elapsed >= args.peer_timeout {
+                        info!(
+                            "Peer {} has exceeded timeout of {:?}, deleting",
+                            pubkey.to_base64_urlsafe(),
+                            args.peer_timeout
+                        );
+                        consul_client
+                            .delete_config(pubkey)
+                            .await
+                            .expect("Couldn't delete peer from Consul");
+                        last_timeout_removal = Instant::now();
                     }
                 }
             }
-
-            // Exclude own peer config.
-            let peers_without_own_config = peers
-                .iter()
-                .cloned()
-                .filter(|x| x.public_key != networkd_config.public_key)
-                .collect::<HashSet<WgPeer>>();
-
-            // If there is a mismatch, write a new networkd configuration.
-            let diff = peers_without_own_config
-                .difference(&networkd_config.peers)
-                .collect::<Vec<_>>();
-            if !diff.is_empty() {
-                info!("Found {} new peer(s) in Consul", diff.len());
-                debug!("New peers: {:#?}", diff);
-
-                networkd_config.peers = peers_without_own_config;
-                networkd_config
-                    .write_config(&args.networkd_dir)
-                    .await
-                    .expect("Couldn't write new NetworkdConfiguration");
-
-                info!("Restarting systemd-networkd to apply new config");
-                NetworkdConfiguration::restart().await.unwrap();
-            }
-
-            // Add our own peer config to Consul. It could be lacking for two reasons:
-            // 1. Either this is the first run and we were not added to Consul yet.
-            // 2. We were removed due to a timeout (temporary network outage) and have to re-add
-            //    ourselves.
-            let own_peer_is_in_consul = peers
-                .iter()
-                .any(|x| x.public_key == networkd_config.public_key);
-
-            if !own_peer_is_in_consul {
-                info!("Existing WireGuard config doesn't yet exist in Consul");
-
-                // Send the config to Consul.
-                let wg_peer = WgPeer::new(
-                    networkd_config.public_key,
-                    &endpoint,
-                    networkd_config.wg_address.addr(),
-                );
-                info!("Existing peer config:\n{:#?}", wg_peer);
-
-                consul_client
-                    .put_config(wg_peer)
-                    .await
-                    .expect("Failed to put peer config into Consul");
-                info!("Wrote own WireGuard peer config to Consul");
-            }
-
-            sleep(args.update_period).await;
         }
-    });
 
-    main_loop.await?;
+        // Exclude own peer config.
+        let peers_without_own_config = peers
+            .iter()
+            .cloned()
+            .filter(|x| x.public_key != networkd_config.public_key)
+            .collect::<HashSet<WgPeer>>();
 
-    Ok(())
+        // If there is a mismatch, write a new networkd configuration.
+        let diff = peers_without_own_config
+            .difference(&networkd_config.peers)
+            .collect::<Vec<_>>();
+        if !diff.is_empty() {
+            info!("Found {} new peer(s) in Consul", diff.len());
+            debug!("New peers: {:#?}", diff);
+            debug!(
+                "networkd peers: {:#?}\nconsul peers {:#?}\n",
+                &networkd_config.peers, &peers
+            );
+
+            networkd_config.peers = peers_without_own_config;
+            networkd_config
+                .write_config(&args.networkd_dir)
+                .await
+                .expect("Couldn't write new NetworkdConfiguration");
+
+            info!("Restarting systemd-networkd to apply new config");
+            NetworkdConfiguration::restart()
+                .await
+                .context("Error restarting systemd-networkd")?;
+        }
+
+        // Add our own peer config to Consul. It could be lacking for two reasons:
+        // 1. Either this is the first run and we were not added to Consul yet.
+        // 2. We were removed due to a timeout (temporary network outage) and have to re-add
+        //    ourselves.
+        let own_peer_is_in_consul = peers
+            .iter()
+            .any(|x| x.public_key == networkd_config.public_key);
+
+        if !own_peer_is_in_consul {
+            info!("Existing WireGuard config doesn't yet exist in Consul");
+
+            // Send the config to Consul.
+            let wg_peer = WgPeer::new(
+                networkd_config.public_key,
+                &endpoint,
+                networkd_config.wg_address.addr(),
+            );
+            info!("Existing peer config:\n{:#?}", wg_peer);
+
+            consul_client
+                .put_config(wg_peer)
+                .await
+                .expect("Failed to put peer config into Consul");
+            info!("Wrote own WireGuard peer config to Consul");
+        }
+
+        sleep(args.update_period).await;
+    }
 }
