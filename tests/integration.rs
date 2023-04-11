@@ -65,33 +65,64 @@ async fn initial_configuration(#[future] consul: ConsulContainer, tmpdir: TempDi
     wait_for_files(vec![network_file.as_path(), netdev_file.as_path()]).await;
 
     // Check the networkd files.
-    let network_entry = freedesktop_entry_parser::parse_entry(network_file)?;
-    assert_eq!(network_entry.section("Match").attr("Name").unwrap(), "wg0");
+    let network_ini = ini::Ini::load_from_file(network_file)?;
     assert_eq!(
-        network_entry.section("Network").attr("Address").unwrap(),
+        network_ini
+            .section(Some("Match"))
+            .unwrap()
+            .get("Name")
+            .unwrap(),
+        "wg0"
+    );
+    assert_eq!(
+        network_ini
+            .section(Some("Network"))
+            .unwrap()
+            .get("Address")
+            .unwrap(),
         "10.0.0.1/24"
     );
 
-    let netdev_entry = freedesktop_entry_parser::parse_entry(netdev_file)?;
-    assert_eq!(netdev_entry.section("NetDev").attr("Name").unwrap(), "wg0");
+    let netdev_ini = ini::Ini::load_from_file(netdev_file)?;
     assert_eq!(
-        netdev_entry.section("NetDev").attr("Kind").unwrap(),
+        netdev_ini
+            .section(Some("NetDev"))
+            .unwrap()
+            .get("Name")
+            .unwrap(),
+        "wg0"
+    );
+    assert_eq!(
+        netdev_ini
+            .section(Some("NetDev"))
+            .unwrap()
+            .get("Kind")
+            .unwrap(),
         "wireguard"
     );
     assert_eq!(
-        netdev_entry.section("NetDev").attr("Description").unwrap(),
+        netdev_ini
+            .section(Some("NetDev"))
+            .unwrap()
+            .get("Description")
+            .unwrap(),
         "WireGuard client"
     );
     assert_eq!(
-        netdev_entry.section("NetDev").attr("MTUBytes").unwrap(),
+        netdev_ini
+            .section(Some("NetDev"))
+            .unwrap()
+            .get("MTUBytes")
+            .unwrap(),
         "1280"
     );
 
     // The private key is generated automatically but we should verify it's valid.
     let private_key = Privkey::from_base64(
-        netdev_entry
-            .section("WireGuard")
-            .attr("PrivateKey")
+        netdev_ini
+            .section(Some("WireGuard"))
+            .unwrap()
+            .get("PrivateKey")
             .unwrap(),
     )?;
 

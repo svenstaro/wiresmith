@@ -70,49 +70,50 @@ impl NetworkdConfiguration {
     #[tracing::instrument]
     pub async fn from_config(networkd_dir: &Path, wg_interface: &str) -> Result<Self> {
         // Get the list of peers in networkd.
-        let netdev_entry = freedesktop_entry_parser::parse_entry(
-            networkd_dir.join(wg_interface).with_extension("netdev"),
-        )?;
-        let wg_port: u16 = netdev_entry
-            .section("WireGuard")
-            .attr("ListenPort")
+        let netdev_path = networkd_dir.join(wg_interface).with_extension("netdev");
+        let netdev_ini = ini::Ini::load_from_file(&netdev_path)?;
+
+        let wg_port = netdev_ini
+            .section(Some("WireGuard"))
+            .context("Couldn't find [WireGuard] section")?
+            .get("ListenPort")
             .context("Couldn't find ListenPort in [WireGuard] section")?
             .parse()?;
-        let private_key: Privkey = netdev_entry
-            .section("WireGuard")
-            .attr("PrivateKey")
+        let private_key: Privkey = netdev_ini
+            .section(Some("WireGuard"))
+            .context("Couldn't find [WireGuard] section")?
+            .get("PrivateKey")
             .context("Couldn't find PrivateKey in [WireGuard] section")?
             .parse()?;
         let public_key = private_key.pubkey();
 
-        let network_entry = freedesktop_entry_parser::parse_entry(
-            networkd_dir.join(wg_interface).with_extension("network"),
-        )?;
-        let wg_address = network_entry
-            .section("Network")
-            .attr("Address")
+        let mut peers = HashSet::new();
+        for peer in netdev_ini.section_all(Some("WireGuardPeer")) {
+            let public_key = peer
+                .get("PublicKey")
+                .context("No PublicKey attribute on WireGuardPeer")?;
+            let endpoint = peer
+                .get("Endpoint")
+                .context("No Endpoint attribute on WireGuardPeer")?;
+            let allowed_ips = peer
+                .get("AllowedIPs")
+                .context("No AllowedIPs attribute on WireGuardPeer")?;
+            peers.insert(WgPeer {
+                public_key: Pubkey::from_base64(public_key)?,
+                endpoint: endpoint.parse()?,
+                address: allowed_ips.parse()?,
+            });
+        }
+
+        let network_path = networkd_dir.join(wg_interface).with_extension("network");
+        let network_ini = ini::Ini::load_from_file(&network_path)?;
+
+        let wg_address = network_ini
+            .section(Some("Network"))
+            .context("Couldn't find [Network] section")?
+            .get("Address")
             .context("Couldn't find Address in [Network] section")?
             .parse()?;
-
-        let mut peers = HashSet::new();
-        for section in netdev_entry.sections() {
-            if section.name() == "WireGuardPeer" {
-                let public_key = section
-                    .attr("PublicKey")
-                    .context("No PublicKey attribute on WireGuardPeer")?;
-                let endpoint = section
-                    .attr("Endpoint")
-                    .context("No Endpoint attribute on WireGuardPeer")?;
-                let allowed_ips = section
-                    .attr("AllowedIPs")
-                    .context("No AllowedIPs attribute on WireGuardPeer")?;
-                peers.insert(WgPeer {
-                    public_key: Pubkey::from_base64(public_key)?,
-                    endpoint: endpoint.parse()?,
-                    address: allowed_ips.parse()?,
-                });
-            }
-        }
 
         Ok(Self {
             wg_interface: wg_interface.to_string(),
@@ -198,7 +199,7 @@ PersistentKeepalive=25\n",
                 .output()
                 .await?;
             let journalctl_stdout = String::from_utf8_lossy(&journalctl_output.stdout);
-            return Err(anyhow!("Failed to restart systemd-networkd: {stderr}\njournalctl -u systemd-networkd: {journalctl_stdout}"));
+            return Err(anyhow!("Failed to restart systemd-networkd: {stderr}\njournalctl -xeu systemd-networkd: {journalctl_stdout}"));
         }
         Ok(())
     }

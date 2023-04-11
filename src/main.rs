@@ -147,10 +147,6 @@ async fn main() -> Result<()> {
         if !diff.is_empty() {
             info!("Found {} new peer(s) in Consul", diff.len());
             debug!("New peers: {:#?}", diff);
-            debug!(
-                "networkd peers: {:#?}\nconsul peers {:#?}\n",
-                &networkd_config.peers, &peers
-            );
 
             networkd_config.peers = peers_without_own_config;
             networkd_config
