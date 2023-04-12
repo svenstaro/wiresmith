@@ -1,13 +1,13 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, time::SystemTime};
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, ensure, Result};
 use base64::prelude::{Engine as _, BASE64_STANDARD};
 use reqwest::{
     header::{HeaderMap, HeaderName, HeaderValue},
     StatusCode, Url,
 };
-use serde::Deserialize;
-use tracing::info;
+use serde::{Deserialize, Serialize};
+use tracing::{info, trace};
 use wireguard_keys::Pubkey;
 
 use crate::wireguard::WgPeer;
@@ -27,6 +27,19 @@ pub struct ConsulKvGet {
     pub lock_index: u64,
     pub modify_index: u64,
     pub value: String,
+}
+
+#[derive(Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+struct Lock {
+    pub locked_at: SystemTime,
+}
+
+impl Lock {
+    fn new() -> Self {
+        Self {
+            locked_at: SystemTime::now(),
+        }
+    }
 }
 
 impl ConsulClient {
@@ -128,6 +141,39 @@ impl ConsulClient {
             "Deleted peer {} config from Consul",
             public_key.to_base64_urlsafe()
         );
+        Ok(())
+    }
+
+    /// Acquire a lock
+    ///
+    /// Times out after a while and returns an error if it does.
+    #[tracing::instrument(skip(self))]
+    pub async fn acquire_lock(&self) -> Result<()> {
+        let lock = Lock::new();
+        let resp = self
+            .http_client
+            .put(self.kv_api_base_url.join("lock?cas=0")?)
+            .json(&lock)
+            .send()
+            .await?
+            .error_for_status()?;
+        ensure!(
+            resp.text().await? == "true",
+            "Already locked by someone else"
+        );
+        trace!("Acquired Consul lock");
+        Ok(())
+    }
+
+    /// Drop a lock
+    #[tracing::instrument(skip(self))]
+    pub async fn drop_lock(&self) -> Result<()> {
+        self.http_client
+            .delete(self.kv_api_base_url.join("lock")?)
+            .send()
+            .await?
+            .error_for_status()?;
+        trace!("Dropped Consul lock");
         Ok(())
     }
 }

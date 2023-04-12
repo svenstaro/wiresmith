@@ -62,8 +62,7 @@ async fn main() -> Result<()> {
         unreachable!("Should have been handled by arg parsing");
     };
 
-    let endpoint = format!("{endpoint_address}:{}", args.wg_port);
-
+    consul_client.acquire_lock().await?;
     info!("Getting existing peers from Consul");
     let peers = consul_client.get_peers().await?;
     if peers.is_empty() {
@@ -96,6 +95,7 @@ async fn main() -> Result<()> {
 
     info!("Restarting systemd-networkd");
     NetworkdConfiguration::restart().await?;
+    consul_client.drop_lock().await?;
 
     // Enter main loop which periodically checks for updates to the list of WireGuard peers.
     // To make sure we give new peers a chance to send handshakes, we need to debounce
@@ -180,7 +180,7 @@ async fn main() -> Result<()> {
             // Send the config to Consul.
             let wg_peer = WgPeer::new(
                 networkd_config.public_key,
-                &endpoint,
+                &format!("{endpoint_address}:{}", args.wg_port),
                 networkd_config.wg_address.addr(),
             );
             info!("Existing peer config:\n{:#?}", wg_peer);
