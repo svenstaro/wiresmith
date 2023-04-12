@@ -7,6 +7,7 @@ use anyhow::{ensure, Result};
 use assert_fs::TempDir;
 use configparser::ini::Ini;
 use fixtures::{consul, tmpdir, ConsulContainer};
+use pretty_assertions::assert_eq;
 use rstest::rstest;
 use tokio::{process::Command, time::sleep};
 use wireguard_keys::Privkey;
@@ -185,12 +186,14 @@ async fn initial_configuration(#[future] consul: ConsulContainer, tmpdir: TempDi
 /// A second peer is joining the network after the first one has created the initial configuration.
 /// This should cause the first peer to generate a new network config with the new peer. The second
 /// peer should generate a network config containing the first peer.
+/// Afterwards, a third peers joins and the previous two nodes should be notified of that.
 #[rstest]
 #[tokio::test]
 async fn join_network(
     #[future] consul: ConsulContainer,
     #[from(tmpdir)] tmpdir_a: TempDir,
     #[from(tmpdir)] tmpdir_b: TempDir,
+    #[from(tmpdir)] tmpdir_c: TempDir,
 ) -> Result<()> {
     let consul = consul.await;
 
@@ -207,6 +210,11 @@ async fn join_network(
     let netdev_file_a = tmpdir_a.join("wg0.netdev");
 
     wait_for_files(vec![network_file_a.as_path(), netdev_file_a.as_path()]).await;
+
+    // We should now have some initial configuration with an empty list of peers.
+    let networkd_config_a = NetworkdConfiguration::from_config(&tmpdir_a, "wg0").await?;
+    assert_eq!(networkd_config_a.wg_address, "10.0.0.1/24".parse()?);
+    assert!(networkd_config_a.peers.is_empty());
 
     // Start the second peer after the first one has generated its files so we don't run into race
     // conditions with address allocation.
@@ -231,7 +239,6 @@ async fn join_network(
     let networkd_config_a = NetworkdConfiguration::from_config(&tmpdir_a, "wg0").await?;
     let networkd_config_b = NetworkdConfiguration::from_config(&tmpdir_b, "wg0").await?;
 
-    // Check the networkd files of the first peer.
     assert_eq!(networkd_config_a.wg_address, "10.0.0.1/24".parse()?);
     assert_eq!(networkd_config_b.wg_address, "10.0.0.2/24".parse()?);
 
@@ -258,6 +265,85 @@ async fn join_network(
     let expected_peers = networkd_config_a
         .peers
         .union(&networkd_config_b.peers)
+        .cloned()
+        .collect::<HashSet<_>>();
+
+    assert_eq!(consul_peers, expected_peers);
+
+    // The third peer now joins.
+    let _wiresmith_c = WiresmithContainer::new(
+        "c",
+        "10.0.0.0/24",
+        "192.168.0.3",
+        consul.http_port,
+        &tmpdir_c,
+    )
+    .await;
+
+    let network_file_c = tmpdir_c.join("wg0.network");
+    let netdev_file_c = tmpdir_c.join("wg0.netdev");
+
+    wait_for_files(vec![network_file_c.as_path(), netdev_file_c.as_path()]).await;
+
+    // Wait again for clients to pick up changes.
+    sleep(Duration::from_secs(2)).await;
+
+    let networkd_config_a = NetworkdConfiguration::from_config(&tmpdir_a, "wg0").await?;
+    let networkd_config_b = NetworkdConfiguration::from_config(&tmpdir_b, "wg0").await?;
+    let networkd_config_c = NetworkdConfiguration::from_config(&tmpdir_c, "wg0").await?;
+
+    assert_eq!(networkd_config_a.wg_address, "10.0.0.1/24".parse()?);
+    assert_eq!(networkd_config_b.wg_address, "10.0.0.2/24".parse()?);
+    assert_eq!(networkd_config_c.wg_address, "10.0.0.3/24".parse()?);
+
+    // We recheck that now everyone has everyone else but not themselves.
+    let mut expected_peers_a = HashSet::new();
+    expected_peers_a.insert(WgPeer {
+        public_key: networkd_config_b.public_key,
+        endpoint: "192.168.0.2:51820".parse().unwrap(),
+        address: "10.0.0.2/32".parse().unwrap(),
+    });
+    expected_peers_a.insert(WgPeer {
+        public_key: networkd_config_c.public_key,
+        endpoint: "192.168.0.3:51820".parse().unwrap(),
+        address: "10.0.0.3/32".parse().unwrap(),
+    });
+
+    let mut expected_peers_b = HashSet::new();
+    expected_peers_b.insert(WgPeer {
+        public_key: networkd_config_a.public_key,
+        endpoint: "192.168.0.1:51820".parse().unwrap(),
+        address: "10.0.0.1/32".parse().unwrap(),
+    });
+    expected_peers_b.insert(WgPeer {
+        public_key: networkd_config_c.public_key,
+        endpoint: "192.168.0.3:51820".parse().unwrap(),
+        address: "10.0.0.3/32".parse().unwrap(),
+    });
+
+    let mut expected_peers_c = HashSet::new();
+    expected_peers_c.insert(WgPeer {
+        public_key: networkd_config_a.public_key,
+        endpoint: "192.168.0.1:51820".parse().unwrap(),
+        address: "10.0.0.1/32".parse().unwrap(),
+    });
+    expected_peers_c.insert(WgPeer {
+        public_key: networkd_config_b.public_key,
+        endpoint: "192.168.0.2:51820".parse().unwrap(),
+        address: "10.0.0.2/32".parse().unwrap(),
+    });
+    assert_eq!(networkd_config_a.peers, expected_peers_a);
+    assert_eq!(networkd_config_b.peers, expected_peers_b);
+    assert_eq!(networkd_config_c.peers, expected_peers_c);
+
+    // Peers in Consul should be union the other peer lists.
+    let consul_peers = consul.client.get_peers().await?;
+    let expected_peers = networkd_config_a
+        .peers
+        .union(&networkd_config_b.peers)
+        .cloned()
+        .collect::<HashSet<_>>()
+        .union(&networkd_config_c.peers)
         .cloned()
         .collect::<HashSet<_>>();
 
