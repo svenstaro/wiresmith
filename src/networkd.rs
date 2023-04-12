@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet, fs::Permissions, net::IpAddr, os::unix::prelude::PermissionsExt,
+    collections::HashSet, fmt, fs::Permissions, net::IpAddr, os::unix::prelude::PermissionsExt,
     path::Path,
 };
 
@@ -28,7 +28,6 @@ fn get_free_address(network: &IpNet, peers: &HashSet<WgPeer>) -> Option<IpAddr> 
     None
 }
 
-#[derive(Debug)]
 pub struct NetworkdConfiguration {
     pub wg_address: IpNet,
     pub wg_interface: String,
@@ -36,6 +35,19 @@ pub struct NetworkdConfiguration {
     pub peers: HashSet<WgPeer>,
     pub private_key: Privkey,
     pub public_key: Pubkey,
+}
+
+impl fmt::Debug for NetworkdConfiguration {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NetworkdConfiguration")
+            .field("wg_address", &self.wg_address)
+            .field("wg_interface", &self.wg_interface)
+            .field("wg_port", &self.wg_port)
+            .field("peers", &self.peers)
+            .field("private_key", &"[REDACTED]")
+            .field("public_key", &self.public_key.to_base64_urlsafe())
+            .finish()
+    }
 }
 
 impl NetworkdConfiguration {
@@ -159,7 +171,7 @@ PrivateKey={}\n",
 PublicKey={}
 Endpoint={}
 AllowedIPs={}
-PersistentKeepalive=25\n",
+PersistentKeepalive=25",
                 peer.public_key, peer.endpoint, peer.address
             );
             netdev_file.push_str(&peer_str);

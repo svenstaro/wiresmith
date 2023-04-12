@@ -91,6 +91,7 @@ async fn main() -> Result<()> {
             peers,
         )?;
         networkd_config.write_config(&args.networkd_dir).await?;
+        info!("Our new config is:\n{:#?}", networkd_config);
     }
 
     info!("Restarting systemd-networkd");
@@ -103,17 +104,8 @@ async fn main() -> Result<()> {
     let timeout_debounce = Duration::from_secs(60);
 
     loop {
-        trace!("Checking Consul for peer updates");
-        let peers = consul_client
-            .get_peers()
-            .await
-            .expect("Can't fetch existing peers from Consul");
-        let mut networkd_config =
-            NetworkdConfiguration::from_config(&args.networkd_dir, &args.wg_interface)
-                .await
-                .expect("Couldn't load existing NetworkdConfiguration from disk");
-
         if args.peer_timeout > Duration::ZERO && last_timeout_removal.elapsed() > timeout_debounce {
+            trace!("Checking WireGuard handshakes for peer timeouts");
             let handshakes = latest_handshakes(&args.wg_interface)
                 .await
                 .expect("Couldn't get list of handshakes from WireGuard");
@@ -136,6 +128,16 @@ async fn main() -> Result<()> {
                 }
             }
         }
+
+        trace!("Checking Consul for peer updates");
+        let peers = consul_client
+            .get_peers()
+            .await
+            .expect("Can't fetch existing peers from Consul");
+        let mut networkd_config =
+            NetworkdConfiguration::from_config(&args.networkd_dir, &args.wg_interface)
+                .await
+                .expect("Couldn't load existing NetworkdConfiguration from disk");
 
         // Exclude own peer config.
         let peers_without_own_config = peers
