@@ -20,7 +20,11 @@ use wiresmith::{
 async fn main() -> Result<()> {
     let args = args::CliArgs::parse();
 
-    if args.verbose {
+    if args.verbose == 2 {
+        tracing_subscriber::fmt()
+            .with_env_filter("wiresmith=trace")
+            .init();
+    } else if args.verbose == 1 {
         tracing_subscriber::fmt()
             .with_env_filter("wiresmith=debug")
             .init();

@@ -87,9 +87,11 @@ pub struct CliArgs {
     #[arg(short, long)]
     pub network: IpNet,
 
-    /// Be verbose.
-    #[arg(short, long)]
-    pub verbose: bool,
+    /// Be verbose
+    ///
+    /// Provide twice for very verbose.
+    #[arg(short, long, action = clap::ArgAction::Count, value_parser = clap::value_parser!(u8).range(0..=2))]
+    pub verbose: u8,
 }
 
 fn network_interface(s: &str) -> Result<NetworkInterface, String> {
