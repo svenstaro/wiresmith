@@ -106,7 +106,7 @@ impl NetworkdConfiguration {
         }
 
         let network_path = networkd_dir.join(wg_interface).with_extension("network");
-        let network_ini = ini::Ini::load_from_file(&network_path)?;
+        let network_ini = ini::Ini::load_from_file(network_path)?;
 
         let wg_address = network_ini
             .section(Some("Network"))
