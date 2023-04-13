@@ -1,6 +1,6 @@
 [package]
 name = "wiresmith"
-version = "0.1.2"
+version = "0.2.0"
 description = "Auto-config Wireguard clients into a mesh"
 authors = ["Sven-Hendrik Haase <svenstaro@gmail.com>"]
 repository = "https://github.com/svenstaro/wiresmith"

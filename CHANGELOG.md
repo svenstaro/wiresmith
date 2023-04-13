@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+
+## [0.2.0] - 2023-04-13
 - Validate address is inside network
 - Add locking mechanism when interacting with Consul
 - Improve logging
@@ -20,5 +22,6 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - Initial release
 
 <!-- next-url -->
-[Unreleased]: https://github.com/svenstaro/wiresmith/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/svenstaro/wiresmith/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/svenstaro/wiresmith/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/svenstaro/wiresmith/compare/v0.1.0...v0.1.2
