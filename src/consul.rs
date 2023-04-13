@@ -1,13 +1,17 @@
-use std::{collections::HashSet, time::SystemTime};
+use std::{
+    collections::HashSet,
+    time::{Duration, Instant, SystemTime},
+};
 
-use anyhow::{anyhow, ensure, Result};
+use anyhow::{anyhow, Result};
 use base64::prelude::{Engine as _, BASE64_STANDARD};
 use reqwest::{
     header::{HeaderMap, HeaderName, HeaderValue},
     StatusCode, Url,
 };
 use serde::{Deserialize, Serialize};
-use tracing::{info, trace};
+use tokio::time::sleep;
+use tracing::{info, trace, warn};
 use wireguard_keys::Pubkey;
 
 use crate::wireguard::WgPeer;
@@ -84,7 +88,7 @@ impl ConsulClient {
     pub async fn get_peers(&self) -> Result<HashSet<WgPeer>> {
         let resp = self
             .http_client
-            .get(self.kv_api_base_url.join("?recurse=true")?)
+            .get(self.kv_api_base_url.join("peers/")?.join("?recurse=true")?)
             .send()
             .await?
             .error_for_status();
@@ -94,12 +98,11 @@ impl ConsulClient {
                 let wgpeers: HashSet<_> = kv_get
                     .into_iter()
                     .map(|x| {
-                        serde_json::from_slice(
-                            &BASE64_STANDARD
-                                .decode(x.value)
-                                .expect("Can't decode base64"),
-                        )
-                        .expect("Can't interpret JSON out of decoded base64")
+                        let decoded = &BASE64_STANDARD
+                            .decode(x.value)
+                            .expect("Can't decode base64");
+                        serde_json::from_slice(&decoded)
+                            .expect("Can't interpret JSON out of decoded base64")
                     })
                     .collect();
                 Ok(wgpeers)
@@ -119,6 +122,7 @@ impl ConsulClient {
         self.http_client
             .put(
                 self.kv_api_base_url
+                    .join("peers/")?
                     .join(&wgpeer.public_key.to_base64_urlsafe())?,
             )
             .json(&wgpeer)
@@ -133,7 +137,11 @@ impl ConsulClient {
     #[tracing::instrument(skip(self, public_key))]
     pub async fn delete_config(&self, public_key: Pubkey) -> Result<()> {
         self.http_client
-            .delete(self.kv_api_base_url.join(&public_key.to_base64_urlsafe())?)
+            .delete(
+                self.kv_api_base_url
+                    .join("peers/")?
+                    .join(&public_key.to_base64_urlsafe())?,
+            )
             .send()
             .await?
             .error_for_status()?;
@@ -150,19 +158,30 @@ impl ConsulClient {
     #[tracing::instrument(skip(self))]
     pub async fn acquire_lock(&self) -> Result<()> {
         let lock = Lock::new();
-        let resp = self
-            .http_client
-            .put(self.kv_api_base_url.join("lock?cas=0")?)
-            .json(&lock)
-            .send()
-            .await?
-            .error_for_status()?;
-        ensure!(
-            resp.text().await? == "true",
-            "Already locked by someone else"
-        );
-        trace!("Acquired Consul lock");
-        Ok(())
+        let wait_time = Instant::now();
+        let timeout = Duration::from_secs(10);
+
+        loop {
+            if wait_time.elapsed() > timeout {
+                warn!("Timed out trying to acquire lock");
+                warn!("Assuming poisoned lock, deleting last lock");
+                self.drop_lock().await?;
+            }
+
+            let resp = self
+                .http_client
+                .put(self.kv_api_base_url.join("lock?cas=0")?)
+                .json(&lock)
+                .send()
+                .await?
+                .error_for_status()?;
+            let body = resp.text().await?;
+            if body.starts_with("true") {
+                trace!("Acquired Consul lock");
+                return Ok(());
+            }
+            sleep(Duration::from_millis(100)).await;
+        }
     }
 
     /// Drop a lock

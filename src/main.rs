@@ -129,6 +129,7 @@ async fn main() -> Result<()> {
             }
         }
 
+        consul_client.acquire_lock().await?;
         trace!("Checking Consul for peer updates");
         let peers = consul_client
             .get_peers()
@@ -191,6 +192,7 @@ async fn main() -> Result<()> {
                 .expect("Failed to put peer config into Consul");
             info!("Wrote own WireGuard peer config to Consul");
         }
+        consul_client.drop_lock().await?;
 
         sleep(args.update_period).await;
     }
