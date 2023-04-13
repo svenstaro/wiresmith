@@ -101,7 +101,7 @@ impl ConsulClient {
                         let decoded = &BASE64_STANDARD
                             .decode(x.value)
                             .expect("Can't decode base64");
-                        serde_json::from_slice(&decoded)
+                        serde_json::from_slice(decoded)
                             .expect("Can't interpret JSON out of decoded base64")
                     })
                     .collect();
