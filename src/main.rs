@@ -148,13 +148,23 @@ async fn main() -> Result<()> {
             .collect::<HashSet<WgPeer>>();
 
         // If there is a mismatch, write a new networkd configuration.
-        let diff = peers_without_own_config
+        let additional_peers = peers_without_own_config
             .difference(&networkd_config.peers)
             .collect::<Vec<_>>();
-        if !diff.is_empty() {
-            info!("Found {} new peer(s) in Consul", diff.len());
-            debug!("New peers: {:#?}", diff);
+        let deleted_peers = networkd_config
+            .peers
+            .difference(&peers_without_own_config)
+            .collect::<Vec<_>>();
+        if !additional_peers.is_empty() {
+            info!("Found {} new peer(s) in Consul", additional_peers.len());
+            debug!("New peers: {:#?}", additional_peers);
+        }
+        if !deleted_peers.is_empty() {
+            info!("Found {} deleted peer(s) in Consul", deleted_peers.len());
+            debug!("Deleted peers: {:#?}", deleted_peers);
+        }
 
+        if !additional_peers.is_empty() || !deleted_peers.is_empty() {
             networkd_config.peers = peers_without_own_config;
             networkd_config
                 .write_config(&args.networkd_dir)

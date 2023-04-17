@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+- Fix peer deletion
 
 ## [0.2.0] - 2023-04-13
 - Validate address is inside network
