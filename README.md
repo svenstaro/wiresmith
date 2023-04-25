@@ -1,4 +1,4 @@
-# wiresmith - Auto-config Wireguard clients into a mesh
+# wiresmith - Auto-config WireGuard clients into a mesh
 
 [![CI](https://github.com/svenstaro/wiresmith/workflows/CI/badge.svg)](https://github.com/svenstaro/wiresmith/actions)
 [![Crates.io](https://img.shields.io/crates/v/wiresmith.svg)](https://crates.io/crates/wiresmith)
