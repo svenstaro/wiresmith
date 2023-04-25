@@ -44,7 +44,7 @@ By default, peers that we haven't received a handshake from within 10 minutes ar
 
 ## Usage
 
-    Auto-config Wireguard clients into a mesh
+    Auto-config WireGuard clients into a mesh
 
     Usage: wiresmith [OPTIONS] --network <NETWORK>
 
