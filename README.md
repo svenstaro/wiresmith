@@ -63,9 +63,11 @@ By default, peers that we haven't received a handshake from within 10 minutes ar
               [default: wiresmith]
 
       -u, --update-period <UPDATE_PERIOD>
-              Update period - how often to check for peer updates in seconds
+              Update period - how often to check for peer updates
 
-              [default: 10]
+              Parses human-friendly time, e.g. 15s
+
+              [default: 10s]
 
       -i, --wg-interface <WG_INTERFACE>
               WireGuard interface name
@@ -78,11 +80,12 @@ By default, peers that we haven't received a handshake from within 10 minutes ar
               [default: 51820]
 
       -t, --peer-timeout <PEER_TIMEOUT>
-              Remove disconnected peers after this many minutes
+              Remove disconnected peers after this duration
 
+              Parses human-friendly time, e.g. 5min
               Set to 0 in order to disable.
 
-              [default: 10]
+              [default: 10min]
 
           --endpoint-interface <ENDPOINT_INTERFACE>
               Public endpoint interface name
