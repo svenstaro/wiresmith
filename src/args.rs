@@ -26,8 +26,8 @@ pub struct CliArgs {
     #[arg(long, default_value = "wiresmith")]
     pub consul_prefix: String,
 
-    /// Update period - how often to check for peer updates in seconds
-    #[arg(short, long, default_value = "10", value_parser = duration_seconds)]
+    /// Update period - how often to check for peer updates
+    #[arg(short, long, default_value = "10s", value_parser = humantime::parse_duration)]
     pub update_period: Duration,
 
     /// WireGuard interface name
@@ -38,10 +38,10 @@ pub struct CliArgs {
     #[arg(short = 'p', long, default_value = "51820")]
     pub wg_port: u16,
 
-    /// Remove disconnected peers after this many minutes
+    /// Remove disconnected peers after this duration
     ///
     /// Set to 0 in order to disable.
-    #[arg(short = 't', long, default_value = "10", value_parser = duration_minutes)]
+    #[arg(short = 't', long, default_value = "10min", value_parser = humantime::parse_duration)]
     pub peer_timeout: Duration,
 
     /// Public endpoint interface name
@@ -103,14 +103,4 @@ fn network_interface(s: &str) -> Result<NetworkInterface, String> {
         Some(i) => Ok(i.clone()),
         None => Err(format!("No usable interface found for '{}'", s)),
     }
-}
-
-fn duration_seconds(s: &str) -> Result<Duration, String> {
-    let dur: u64 = s.parse().map_err(|_| format!("Invalid number: {s}"))?;
-    Ok(Duration::from_secs(dur))
-}
-
-fn duration_minutes(s: &str) -> Result<Duration, String> {
-    let dur: u64 = s.parse().map_err(|_| format!("Invalid number: {s}"))?;
-    Ok(Duration::from_secs(dur * 60))
 }

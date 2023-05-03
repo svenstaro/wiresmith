@@ -86,7 +86,7 @@ impl WiresmithContainer {
             .arg("--endpoint-address")
             .arg(endpoint_address)
             .arg("--update-period")
-            .arg("1")
+            .arg("1s")
             // To diagnose issues, it's sometimes helpful to comment out the following line so that
             // we can see log output from the wiresmith instances inside the containers.
             .stdout(Stdio::null())
