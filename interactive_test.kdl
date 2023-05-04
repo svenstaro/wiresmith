@@ -9,19 +9,19 @@ layout {
             pane {
                 name "wiresmith1"
                 command "podman"
-                args "exec" "wiresmith1" "bash" "-c" "sleep 2 && wiresmith --consul-address http://10.0.2.2:8500 --network 10.0.0.0/24 --endpoint-address 10.0.2.2 --update-period 1s --peer-timeout 3min -p 11111 -v"
+                args "exec" "wiresmith1" "bash" "-c" "sleep 2 && wiresmith --consul-address http://10.0.2.2:8500 --network 10.0.0.0/24 --endpoint-address 10.0.2.2 --update-period 1s --peer-timeout 10s --keepalive 2s -p 11111 -v"
             }
         }
         pane {
             pane {
                 name "wiresmith2"
                 command "podman"
-                args "exec" "wiresmith2" "bash" "-c" "sleep 2 && wiresmith --consul-address http://10.0.2.2:8500 --network 10.0.0.0/24 --endpoint-address 10.0.2.2 --update-period 1s --peer-timeout 3min -p 22222 -v"
+                args "exec" "wiresmith2" "bash" "-c" "sleep 2 && wiresmith --consul-address http://10.0.2.2:8500 --network 10.0.0.0/24 --endpoint-address 10.0.2.2 --update-period 1s --peer-timeout 10s --keepalive 2s -p 22222 -v"
             }
             pane {
                 name "wiresmith3"
                 command "podman"
-                args "exec" "wiresmith3" "bash" "-c" "sleep 2 && wiresmith --consul-address http://10.0.2.2:8500 --network 10.0.0.0/24 --endpoint-address 10.0.2.2 --update-period 1s --peer-timeout 3min -p 33333 -v"
+                args "exec" "wiresmith3" "bash" "-c" "sleep 2 && wiresmith --consul-address http://10.0.2.2:8500 --network 10.0.0.0/24 --endpoint-address 10.0.2.2 --update-period 1s --peer-timeout 10s --keepalive 2s -p 33333 -v"
             }
         }
     }
