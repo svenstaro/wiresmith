@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+- Use latest data transmission date instead of latest handshake for timeouts [#17](https://github.com/svenstaro/wiresmith/pull/17) (thanks @tomgroenwoldt)
 
 ## [0.2.1] - 2023-04-17
 - Fix peer deletion
