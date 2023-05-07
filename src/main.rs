@@ -1,7 +1,7 @@
 mod args;
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     time::{Duration, Instant},
 };
 
@@ -13,7 +13,7 @@ use tracing::{debug, info, trace};
 use wiresmith::{
     consul::ConsulClient,
     networkd::NetworkdConfiguration,
-    wireguard::{latest_handshakes, WgPeer},
+    wireguard::{latest_transfer_rx, WgPeer},
 };
 
 #[tokio::main]
@@ -89,7 +89,9 @@ async fn main() -> Result<()> {
             &args.wg_interface,
             peers,
         )?;
-        networkd_config.write_config(&args.networkd_dir).await?;
+        networkd_config
+            .write_config(&args.networkd_dir, args.keepalive)
+            .await?;
         info!("Our new config is:\n{:#?}", networkd_config);
     }
 
@@ -97,34 +99,35 @@ async fn main() -> Result<()> {
     NetworkdConfiguration::restart().await?;
     consul_client.drop_lock().await?;
 
-    // Enter main loop which periodically checks for updates to the list of WireGuard peers.
-    // To make sure we give new peers a chance to send handshakes, we need to debounce
-    // timeout removals.
-    let mut last_timeout_removal = Instant::now();
-    let timeout_debounce = Duration::from_secs(60);
+    // Stores amount of received bytes together with a timestamp for every peer.
+    let mut received_bytes: HashMap<wireguard_keys::Pubkey, (usize, Instant)> = HashMap::new();
 
+    // Enter main loop which periodically checks for updates to the list of WireGuard peers.
     loop {
-        if args.peer_timeout > Duration::ZERO && last_timeout_removal.elapsed() > timeout_debounce {
-            trace!("Checking WireGuard handshakes for peer timeouts");
-            let handshakes = latest_handshakes(&args.wg_interface)
+        if args.peer_timeout > Duration::ZERO {
+            // Fetch latest received bytes from peers. If new bytes were received, update the
+            // hashmap entry. Delete the peer if no new bytes were received for duration
+            // `peer_timeout`.
+            let transfer_rates = latest_transfer_rx(&args.wg_interface)
                 .await
-                .expect("Couldn't get list of handshakes from WireGuard");
-            for (pubkey, latest_handshake) in handshakes {
-                // This can fail due to clock drift and potentially it could be a negative
-                // value. In that case, we just do nothing in that particular iteration.
-                if let Ok(elapsed) = latest_handshake.elapsed() {
-                    if elapsed >= args.peer_timeout {
-                        info!(
-                            "Peer {} has exceeded timeout of {:?}, deleting",
-                            pubkey.to_base64_urlsafe(),
-                            args.peer_timeout
-                        );
-                        consul_client
-                            .delete_config(pubkey)
-                            .await
-                            .expect("Couldn't delete peer from Consul");
-                        last_timeout_removal = Instant::now();
-                    }
+                .expect("Couldn't get list of transfer rates from WireGuard");
+            for (pubkey, bytes) in transfer_rates {
+                let (old_bytes, timestamp) = received_bytes
+                    .entry(pubkey)
+                    .or_insert((bytes, Instant::now()));
+                if timestamp.elapsed() > args.peer_timeout && bytes.eq(old_bytes) {
+                    info!(
+                        "Peer {} has exceeded timeout of {:?}, deleting",
+                        pubkey.to_base64_urlsafe(),
+                        args.peer_timeout
+                    );
+                    consul_client
+                        .delete_config(pubkey)
+                        .await
+                        .expect("Couldn't delete peer from Consul");
+                } else if !bytes.eq(old_bytes) {
+                    *old_bytes = bytes;
+                    *timestamp = Instant::now();
                 }
             }
         }
@@ -167,7 +170,7 @@ async fn main() -> Result<()> {
         if !additional_peers.is_empty() || !deleted_peers.is_empty() {
             networkd_config.peers = peers_without_own_config;
             networkd_config
-                .write_config(&args.networkd_dir)
+                .write_config(&args.networkd_dir, args.keepalive)
                 .await
                 .expect("Couldn't write new NetworkdConfiguration");
 

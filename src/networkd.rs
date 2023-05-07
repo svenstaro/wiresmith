@@ -139,7 +139,7 @@ impl NetworkdConfiguration {
 
     /// Generate and write systemd-networkd config
     #[tracing::instrument]
-    pub async fn write_config(&self, networkd_dir: &Path) -> Result<()> {
+    pub async fn write_config(&self, networkd_dir: &Path, persistent_keepalive: u64) -> Result<()> {
         let network_file = format!(
             "\
 [Match]
@@ -171,8 +171,8 @@ PrivateKey={}\n",
 PublicKey={}
 Endpoint={}
 AllowedIPs={}
-PersistentKeepalive=25",
-                peer.public_key, peer.endpoint, peer.address
+PersistentKeepalive={}",
+                peer.public_key, peer.endpoint, peer.address, persistent_keepalive
             );
             netdev_file.push_str(&peer_str);
         }

@@ -1,8 +1,4 @@
-use std::{
-    fmt,
-    net::IpAddr,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use std::{fmt, net::IpAddr};
 
 use anyhow::{ensure, Result};
 use ipnet::IpNet;
@@ -42,24 +38,21 @@ impl fmt::Debug for WgPeer {
     }
 }
 
-fn parse_latest_handshakes(s: &str) -> Result<Vec<(Pubkey, SystemTime)>> {
+fn parse_latest_transfer_rx(s: &str) -> Result<Vec<(Pubkey, usize)>> {
     let mut peers = vec![];
     for line in s.lines() {
         let split_line = line.split_ascii_whitespace().collect::<Vec<_>>();
-        peers.push((
-            split_line[0].parse()?,
-            UNIX_EPOCH + Duration::from_secs(split_line[1].parse()?),
-        ));
+        peers.push((split_line[0].parse()?, split_line[1].parse()?));
     }
     Ok(peers)
 }
 
-/// Get a list of latest handshakes by running `wg show <interface> latest-handshakes`
-pub async fn latest_handshakes(interface: &str) -> Result<Vec<(Pubkey, SystemTime)>> {
+/// Get a list of latest received bytes of peers by running 'wg show <interface> transfer'
+pub async fn latest_transfer_rx(interface: &str) -> Result<Vec<(Pubkey, usize)>> {
     let output = Command::new("wg")
         .arg("show")
         .arg(interface)
-        .arg("latest-handshakes")
+        .arg("transfer")
         .output()
         .await?;
     ensure!(
@@ -69,7 +62,7 @@ pub async fn latest_handshakes(interface: &str) -> Result<Vec<(Pubkey, SystemTim
     );
     let output_reader = std::str::from_utf8(&output.stdout)?;
 
-    parse_latest_handshakes(output_reader)
+    parse_latest_transfer_rx(output_reader)
 }
 
 #[cfg(test)]
@@ -79,35 +72,30 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn latest_handshakes_test() {
-        let handshakes_output = "\
-DIyAfJzu5HRqpx/Dd8q1Q1Llqns+D7sL3JBEaYkzhCY=    1679909056
-Enpz7ohwrsFIYfEt1S1zInXv4c6DfEh9khHP3ZeCKAU=    1679909054
-7ROFbBm9HEtnnuctjp1uuglg/x+dwo75nnVgCPfUFyo=    0
-VD59H0sSPpG/nAr1/CgQPGBGhNQ2YLwOurWvxcogSFU=    1679909060
-7M679vrRuJuZcQ8hSAtbswhEcQZINCLkPyUx3S1LTC8=    0";
+    fn latest_transfer_test() {
+        let transfer_output = "\
+MkgQcW7mlCtqWIV3JrtIrBRgG9efxwSvnXOsU1R7x2c=	304	272
+pKidG6sLcARl/OiB7j8s9yPeo/20fEHuxBi4aamAuVo=	308	272
+MkgQcW7mlCtqWIV3JrtIrBRgG9efxwSvnXOsU1R7x2c=	0 272
+pKidG6sLcARl/OiB7j8s9yPeo/20fEHuxBi4aamAuVo=	0 0";
 
-        let result = parse_latest_handshakes(handshakes_output).unwrap();
+        let result = parse_latest_transfer_rx(transfer_output).unwrap();
         let expected = vec![
             (
-                Pubkey::from_base64("DIyAfJzu5HRqpx/Dd8q1Q1Llqns+D7sL3JBEaYkzhCY=").unwrap(),
-                UNIX_EPOCH + Duration::from_secs(1679909056),
+                Pubkey::from_base64("MkgQcW7mlCtqWIV3JrtIrBRgG9efxwSvnXOsU1R7x2c").unwrap(),
+                304,
             ),
             (
-                Pubkey::from_base64("Enpz7ohwrsFIYfEt1S1zInXv4c6DfEh9khHP3ZeCKAU=").unwrap(),
-                UNIX_EPOCH + Duration::from_secs(1679909054),
+                Pubkey::from_base64("pKidG6sLcARl/OiB7j8s9yPeo/20fEHuxBi4aamAuVo").unwrap(),
+                308,
             ),
             (
-                Pubkey::from_base64("7ROFbBm9HEtnnuctjp1uuglg/x+dwo75nnVgCPfUFyo=").unwrap(),
-                UNIX_EPOCH + Duration::from_secs(0),
+                Pubkey::from_base64("MkgQcW7mlCtqWIV3JrtIrBRgG9efxwSvnXOsU1R7x2c").unwrap(),
+                0,
             ),
             (
-                Pubkey::from_base64("VD59H0sSPpG/nAr1/CgQPGBGhNQ2YLwOurWvxcogSFU=").unwrap(),
-                UNIX_EPOCH + Duration::from_secs(1679909060),
-            ),
-            (
-                Pubkey::from_base64("7M679vrRuJuZcQ8hSAtbswhEcQZINCLkPyUx3S1LTC8=").unwrap(),
-                UNIX_EPOCH + Duration::from_secs(0),
+                Pubkey::from_base64("pKidG6sLcARl/OiB7j8s9yPeo/20fEHuxBi4aamAuVo").unwrap(),
+                0,
             ),
         ];
         assert_eq!(result, expected);

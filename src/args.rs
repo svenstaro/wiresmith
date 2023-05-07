@@ -44,6 +44,12 @@ pub struct CliArgs {
     #[arg(short = 't', long, default_value = "10min", value_parser = humantime::parse_duration)]
     pub peer_timeout: Duration,
 
+    /// Set persistent keepalive option for wireguard
+    ///
+    /// Set to 0 in order to disable.
+    #[arg(short = 'k', long, default_value = "25s", value_parser = keep_alive)]
+    pub keepalive: u64,
+
     /// Public endpoint interface name
     ///
     /// You need to provide either this or --endpoint-address.
@@ -103,4 +109,9 @@ fn network_interface(s: &str) -> Result<NetworkInterface, String> {
         Some(i) => Ok(i.clone()),
         None => Err(format!("No usable interface found for '{}'", s)),
     }
+}
+
+fn keep_alive(s: &str) -> Result<u64, humantime::DurationError> {
+    let duration = humantime::parse_duration(s)?;
+    Ok(duration.as_secs())
 }

@@ -56,6 +56,7 @@ async fn initial_configuration(#[future] consul: ConsulContainer, tmpdir: TempDi
         "10.0.0.0/24",
         "192.168.0.1",
         consul.http_port,
+        &[],
         &tmpdir,
     )
     .await;
@@ -202,6 +203,7 @@ async fn join_network(
         "10.0.0.0/24",
         "192.168.0.1",
         consul.http_port,
+        &[],
         &tmpdir_a,
     )
     .await;
@@ -223,6 +225,7 @@ async fn join_network(
         "10.0.0.0/24",
         "192.168.0.2",
         consul.http_port,
+        &[],
         &tmpdir_b,
     )
     .await;
@@ -276,6 +279,7 @@ async fn join_network(
         "10.0.0.0/24",
         "192.168.0.3",
         consul.http_port,
+        &[],
         &tmpdir_c,
     )
     .await;

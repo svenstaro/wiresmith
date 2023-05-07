@@ -24,6 +24,7 @@ pub async fn wait_for_files(files: Vec<&Path>) {
     );
 }
 
+#[derive(PartialEq)]
 pub struct WiresmithContainer {
     /// Full unique container_name
     ///
@@ -38,6 +39,7 @@ impl WiresmithContainer {
         network: &str,
         endpoint_address: &str,
         consul_port: u16,
+        args: &[&str],
         dir: &Path,
     ) -> Self {
         let container_name = format!("{name}-{consul_port}");
@@ -87,6 +89,7 @@ impl WiresmithContainer {
             .arg(endpoint_address)
             .arg("--update-period")
             .arg("1s")
+            .args(args.clone())
             // To diagnose issues, it's sometimes helpful to comment out the following line so that
             // we can see log output from the wiresmith instances inside the containers.
             .stdout(Stdio::null())
