@@ -36,9 +36,10 @@ wireguard-keys = "0.1"
 humantime = "2.1.0"
 
 [dev-dependencies]
-rstest = "0.17"
-port_check = "0.1"
 assert_cmd = "2"
 assert_fs = "1"
-pretty_assertions = "1"
 configparser = "3"
+port_check = "0.1"
+pretty_assertions = "1"
+rand = "0.8.5"
+rstest = "0.17"

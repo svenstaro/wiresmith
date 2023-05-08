@@ -8,6 +8,7 @@ use assert_fs::TempDir;
 use configparser::ini::Ini;
 use fixtures::{consul, tmpdir, ConsulContainer};
 use pretty_assertions::assert_eq;
+use rand::seq::SliceRandom;
 use rstest::rstest;
 use tokio::{process::Command, time::sleep};
 use wireguard_keys::Privkey;
@@ -323,6 +324,123 @@ async fn join_network(
         .cloned()
         .collect::<HashSet<_>>();
 
+    assert_eq!(consul_peers, expected_peers);
+
+    Ok(())
+}
+
+/// Three peers join the network. A randomly stopped peer should be removed by
+/// consul after the defined timeout.
+#[rstest]
+#[tokio::test]
+async fn deletes_peer_on_timeout(
+    #[future] consul: ConsulContainer,
+    #[from(tmpdir)] tmpdir_a: TempDir,
+    #[from(tmpdir)] tmpdir_b: TempDir,
+    #[from(tmpdir)] tmpdir_c: TempDir,
+) -> Result<()> {
+    let consul = consul.await;
+    let mut peers: Vec<(WiresmithContainer, WgPeer)> = vec![];
+
+    let wiresmith_a = WiresmithContainer::new(
+        "a",
+        "10.0.0.0/24",
+        consul.http_port,
+        &["--peer-timeout", "3s", "--keepalive", "1s"],
+        &tmpdir_a,
+    )
+    .await;
+
+    let network_file_a = tmpdir_a.join("wg0.network");
+    let netdev_file_a = tmpdir_a.join("wg0.netdev");
+
+    wait_for_files(vec![network_file_a.as_path(), netdev_file_a.as_path()]).await;
+
+    let networkd_config_a = NetworkdConfiguration::from_config(&tmpdir_a, "wg0").await?;
+    peers.push((
+        wiresmith_a,
+        WgPeer {
+            public_key: networkd_config_a.public_key,
+            endpoint: format!("a-{}:51820", consul.http_port),
+            address: "10.0.0.1/32".parse().unwrap(),
+        },
+    ));
+
+    let wiresmith_b = WiresmithContainer::new(
+        "b",
+        "10.0.0.0/24",
+        consul.http_port,
+        &["--peer-timeout", "3s", "--keepalive", "1s"],
+        &tmpdir_b,
+    )
+    .await;
+
+    let network_file_b = tmpdir_b.join("wg0.network");
+    let netdev_file_b = tmpdir_b.join("wg0.netdev");
+
+    wait_for_files(vec![network_file_b.as_path(), netdev_file_b.as_path()]).await;
+
+    let networkd_config_b = NetworkdConfiguration::from_config(&tmpdir_b, "wg0").await?;
+    peers.push((
+        wiresmith_b,
+        WgPeer {
+            public_key: networkd_config_b.public_key,
+            endpoint: format!("b-{}:51820", consul.http_port),
+            address: "10.0.0.2/32".parse().unwrap(),
+        },
+    ));
+
+    let wiresmith_c = WiresmithContainer::new(
+        "c",
+        "10.0.0.0/24",
+        consul.http_port,
+        &["--peer-timeout", "3s", "--keepalive", "1s"],
+        &tmpdir_c,
+    )
+    .await;
+
+    let network_file_c = tmpdir_c.join("wg0.network");
+    let netdev_file_c = tmpdir_c.join("wg0.netdev");
+
+    wait_for_files(vec![network_file_c.as_path(), netdev_file_c.as_path()]).await;
+
+    let networkd_config_c = NetworkdConfiguration::from_config(&tmpdir_c, "wg0").await?;
+    peers.push((
+        wiresmith_c,
+        WgPeer {
+            public_key: networkd_config_c.public_key,
+            endpoint: format!("c-{}:51820", consul.http_port),
+            address: "10.0.0.3/32".parse().unwrap(),
+        },
+    ));
+
+    sleep(Duration::from_secs(1)).await;
+
+    let consul_peers = consul.client.get_peers().await?;
+    assert_eq!(consul_peers.len(), 3);
+
+    // Kill a random peer.
+    let mut rng = rand::thread_rng();
+    peers.shuffle(&mut rng);
+    let (random_peer, remaining_peers) = peers.split_first().expect("Peers are empty.");
+    Command::new("podman")
+        .arg("kill")
+        .arg(&random_peer.0.container_name)
+        .output()
+        .await
+        .unwrap_or_else(|_| {
+            panic!(
+                "Error trying to run podman kill {}",
+                &random_peer.0.container_name
+            )
+        });
+
+    // Wait for a little more than the duration `peer_timeout` to trigger the timeout.
+    std::thread::sleep(Duration::from_secs(5));
+
+    let expected_peers = HashSet::from_iter(remaining_peers.into_iter().map(|peer| peer.1.clone()));
+
+    let consul_peers = consul.client.get_peers().await?;
     assert_eq!(consul_peers, expected_peers);
 
     Ok(())
