@@ -13,7 +13,7 @@ use tokio::{process::Command, time::sleep};
 use wireguard_keys::Privkey;
 use wiresmith::{networkd::NetworkdConfiguration, wireguard::WgPeer};
 
-use crate::{utils::wait_for_files, utils::WiresmithContainer};
+use crate::{fixtures::port, utils::wait_for_files, utils::WiresmithContainer};
 
 /// If the address is provided explicitly, it needs to be contained within network.
 #[rstest]
@@ -51,10 +51,11 @@ async fn address_contained_within_network(
 async fn initial_configuration(#[future] consul: ConsulContainer, tmpdir: TempDir) -> Result<()> {
     let consul = consul.await;
 
+    let port = port();
     let wiresmith = WiresmithContainer::new(
         "initial",
         "10.0.0.0/24",
-        "192.168.0.1",
+        port,
         consul.http_port,
         &[],
         &tmpdir,
@@ -160,7 +161,10 @@ async fn initial_configuration(#[future] consul: ConsulContainer, tmpdir: TempDi
     wg_config
         .read(String::from_utf8_lossy(&wg_showconf_output.stdout).to_string())
         .expect("Couldn't parse WireGuard config");
-    assert_eq!(wg_config.get("Interface", "ListenPort").unwrap(), "51820");
+    assert_eq!(
+        wg_config.get("Interface", "ListenPort").unwrap(),
+        port.to_string()
+    );
     assert_eq!(
         wg_config.get("Interface", "PrivateKey").unwrap(),
         private_key.to_base64()
@@ -174,7 +178,7 @@ async fn initial_configuration(#[future] consul: ConsulContainer, tmpdir: TempDi
     let mut expected_peers = HashSet::new();
     expected_peers.insert(WgPeer {
         public_key: private_key.pubkey(),
-        endpoint: "192.168.0.1:51820".parse().unwrap(),
+        endpoint: format!("10.0.2.2:{port}").parse().unwrap(),
         address: "10.0.0.1/32".parse().unwrap(),
     });
 
@@ -198,15 +202,9 @@ async fn join_network(
 ) -> Result<()> {
     let consul = consul.await;
 
-    let _wiresmith_a = WiresmithContainer::new(
-        "a",
-        "10.0.0.0/24",
-        "192.168.0.1",
-        consul.http_port,
-        &[],
-        &tmpdir_a,
-    )
-    .await;
+    let port_a = port();
+    let _wiresmith_a =
+        WiresmithContainer::new("a", "10.0.0.0/24", port_a, consul.http_port, &[], &tmpdir_a).await;
 
     let network_file_a = tmpdir_a.join("wg0.network");
     let netdev_file_a = tmpdir_a.join("wg0.netdev");
@@ -220,15 +218,9 @@ async fn join_network(
 
     // Start the second peer after the first one has generated its files so we don't run into race
     // conditions with address allocation.
-    let _wiresmith_b = WiresmithContainer::new(
-        "b",
-        "10.0.0.0/24",
-        "192.168.0.2",
-        consul.http_port,
-        &[],
-        &tmpdir_b,
-    )
-    .await;
+    let port_b = port();
+    let _wiresmith_b =
+        WiresmithContainer::new("b", "10.0.0.0/24", port_b, consul.http_port, &[], &tmpdir_b).await;
 
     let network_file_b = tmpdir_b.join("wg0.network");
     let netdev_file_b = tmpdir_b.join("wg0.netdev");
@@ -250,14 +242,14 @@ async fn join_network(
     let mut expected_peers_a = HashSet::new();
     expected_peers_a.insert(WgPeer {
         public_key: networkd_config_b.public_key,
-        endpoint: "192.168.0.2:51820".parse().unwrap(),
+        endpoint: format!("10.0.2.2:{port_b}").parse().unwrap(),
         address: "10.0.0.2/32".parse().unwrap(),
     });
 
     let mut expected_peers_b = HashSet::new();
     expected_peers_b.insert(WgPeer {
         public_key: networkd_config_a.public_key,
-        endpoint: "192.168.0.1:51820".parse().unwrap(),
+        endpoint: format!("10.0.2.2:{port_a}").parse().unwrap(),
         address: "10.0.0.1/32".parse().unwrap(),
     });
     assert_eq!(networkd_config_a.peers, expected_peers_a);
@@ -274,15 +266,9 @@ async fn join_network(
     assert_eq!(consul_peers, expected_peers);
 
     // The third peer now joins.
-    let _wiresmith_c = WiresmithContainer::new(
-        "c",
-        "10.0.0.0/24",
-        "192.168.0.3",
-        consul.http_port,
-        &[],
-        &tmpdir_c,
-    )
-    .await;
+    let port_c = port();
+    let _wiresmith_c =
+        WiresmithContainer::new("c", "10.0.0.0/24", port_c, consul.http_port, &[], &tmpdir_c).await;
 
     let network_file_c = tmpdir_c.join("wg0.network");
     let netdev_file_c = tmpdir_c.join("wg0.netdev");
@@ -304,36 +290,36 @@ async fn join_network(
     let mut expected_peers_a = HashSet::new();
     expected_peers_a.insert(WgPeer {
         public_key: networkd_config_b.public_key,
-        endpoint: "192.168.0.2:51820".parse().unwrap(),
+        endpoint: format!("10.0.2.2:{port_b}").parse().unwrap(),
         address: "10.0.0.2/32".parse().unwrap(),
     });
     expected_peers_a.insert(WgPeer {
         public_key: networkd_config_c.public_key,
-        endpoint: "192.168.0.3:51820".parse().unwrap(),
+        endpoint: format!("10.0.2.2:{port_c}").parse().unwrap(),
         address: "10.0.0.3/32".parse().unwrap(),
     });
 
     let mut expected_peers_b = HashSet::new();
     expected_peers_b.insert(WgPeer {
         public_key: networkd_config_a.public_key,
-        endpoint: "192.168.0.1:51820".parse().unwrap(),
+        endpoint: format!("10.0.2.2:{port_a}").parse().unwrap(),
         address: "10.0.0.1/32".parse().unwrap(),
     });
     expected_peers_b.insert(WgPeer {
         public_key: networkd_config_c.public_key,
-        endpoint: "192.168.0.3:51820".parse().unwrap(),
+        endpoint: format!("10.0.2.2:{port_c}").parse().unwrap(),
         address: "10.0.0.3/32".parse().unwrap(),
     });
 
     let mut expected_peers_c = HashSet::new();
     expected_peers_c.insert(WgPeer {
         public_key: networkd_config_a.public_key,
-        endpoint: "192.168.0.1:51820".parse().unwrap(),
+        endpoint: format!("10.0.2.2:{port_a}").parse().unwrap(),
         address: "10.0.0.1/32".parse().unwrap(),
     });
     expected_peers_c.insert(WgPeer {
         public_key: networkd_config_b.public_key,
-        endpoint: "192.168.0.2:51820".parse().unwrap(),
+        endpoint: format!("10.0.2.2:{port_b}").parse().unwrap(),
         address: "10.0.0.2/32".parse().unwrap(),
     });
     assert_eq!(networkd_config_a.peers, expected_peers_a);

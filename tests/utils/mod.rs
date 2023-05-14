@@ -37,7 +37,6 @@ impl WiresmithContainer {
     pub async fn new(
         name: &str,
         network: &str,
-        endpoint_address: &str,
         port: u16,
         consul_port: u16,
         args: &[&str],
@@ -89,7 +88,7 @@ impl WiresmithContainer {
             .arg("--network")
             .arg(network)
             .arg("--endpoint-address")
-            .arg(endpoint_address)
+            .arg("10.0.2.2")
             .arg("--update-period")
             .arg("1s")
             .arg("-p")
