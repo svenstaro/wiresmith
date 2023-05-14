@@ -38,6 +38,7 @@ impl WiresmithContainer {
         name: &str,
         network: &str,
         endpoint_address: &str,
+        port: u16,
         consul_port: u16,
         args: &[&str],
         dir: &Path,
@@ -57,7 +58,9 @@ impl WiresmithContainer {
             // SYS_ADMIN could be removed when https://github.com/systemd/systemd/pull/26478 is released
             .arg("SYS_ADMIN,NET_ADMIN")
             .arg("--network")
-            .arg(format!("container:consul-{consul_port}"))
+            .arg("slirp4netns:allow_host_loopback=true")
+            .arg("-p")
+            .arg(format!("{port}:{port}/udp"))
             .arg("-v")
             .arg(concat!(
                 env!("CARGO_BIN_EXE_wiresmith"),
@@ -82,13 +85,15 @@ impl WiresmithContainer {
             .arg(&container_name)
             .arg("wiresmith")
             .arg("--consul-address")
-            .arg(format!("http://consul-{consul_port}:{consul_port}"))
+            .arg(format!("http://10.0.2.2:{consul_port}"))
             .arg("--network")
             .arg(network)
             .arg("--endpoint-address")
             .arg(endpoint_address)
             .arg("--update-period")
             .arg("1s")
+            .arg("-p")
+            .arg(port.to_string())
             .args(args.clone())
             // To diagnose issues, it's sometimes helpful to comment out the following line so that
             // we can see log output from the wiresmith instances inside the containers.
