@@ -143,6 +143,19 @@ Alternatively, you can use the provided OCI images using Podman or Docker:
 
 You can also use the provided systemd service.
 
+## Similar projects
+
+If `wiresmith` doesn't fulfill your needs, perhaps one of these projects does:
+
+- [wg-meshconf](https://github.com/k4yt3x/wg-meshconf)
+- [autowire](https://github.com/elghazal-a/autowire)
+- [wgmesh](https://github.com/aschmidt75/wgmesh)
+
+You might also find some tools in these lists:
+
+- [awesome-wireguard](https://github.com/cedrickchee/awesome-wireguard)
+- [WireGuardMeshes](https://github.com/HarvsG/WireGuardMeshes)
+
 ## Development
 
 This project uses Podman in rootless mode to facilitate rapid local testing. Before starting a
