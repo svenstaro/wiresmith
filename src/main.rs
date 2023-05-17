@@ -110,7 +110,7 @@ async fn main() -> Result<()> {
             // `peer_timeout`.
             let transfer_rates = latest_transfer_rx(&args.wg_interface)
                 .await
-                .expect("Couldn't get list of transfer rates from WireGuard");
+                .context("Couldn't get list of transfer rates from WireGuard")?;
             for (pubkey, bytes) in transfer_rates {
                 let (old_bytes, timestamp) = received_bytes
                     .entry(pubkey)
@@ -124,7 +124,7 @@ async fn main() -> Result<()> {
                     consul_client
                         .delete_config(pubkey)
                         .await
-                        .expect("Couldn't delete peer from Consul");
+                        .context("Couldn't delete peer from Consul")?;
                 } else if !bytes.eq(old_bytes) {
                     *old_bytes = bytes;
                     *timestamp = Instant::now();
@@ -137,11 +137,11 @@ async fn main() -> Result<()> {
         let peers = consul_client
             .get_peers()
             .await
-            .expect("Can't fetch existing peers from Consul");
+            .context("Can't fetch existing peers from Consul")?;
         let mut networkd_config =
             NetworkdConfiguration::from_config(&args.networkd_dir, &args.wg_interface)
                 .await
-                .expect("Couldn't load existing NetworkdConfiguration from disk");
+                .context("Couldn't load existing NetworkdConfiguration from disk")?;
 
         // Exclude own peer config.
         let peers_without_own_config = peers
@@ -172,7 +172,7 @@ async fn main() -> Result<()> {
             networkd_config
                 .write_config(&args.networkd_dir, args.keepalive)
                 .await
-                .expect("Couldn't write new NetworkdConfiguration");
+                .context("Couldn't write new NetworkdConfiguration")?;
 
             info!("Restarting systemd-networkd to apply new config");
             NetworkdConfiguration::restart()
@@ -202,7 +202,7 @@ async fn main() -> Result<()> {
             consul_client
                 .put_config(wg_peer)
                 .await
-                .expect("Failed to put peer config into Consul");
+                .context("Failed to put peer config into Consul")?;
             info!("Wrote own WireGuard peer config to Consul");
         }
         consul_client.drop_lock().await?;
