@@ -5,6 +5,7 @@ Wants=network-online.target systemd-networkd-wait-online.service
 
 [Service]
 ExecStart=/usr/bin/wiresmith
+Restart=on-failure
 
 DynamicUser=yes
 PrivateTmp=yes
