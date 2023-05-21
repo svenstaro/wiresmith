@@ -37,7 +37,6 @@ impl WiresmithContainer {
     pub async fn new(
         name: &str,
         network: &str,
-        endpoint_address: &str,
         consul_port: u16,
         args: &[&str],
         dir: &Path,
@@ -57,7 +56,7 @@ impl WiresmithContainer {
             // SYS_ADMIN could be removed when https://github.com/systemd/systemd/pull/26478 is released
             .arg("SYS_ADMIN,NET_ADMIN")
             .arg("--network")
-            .arg(format!("container:consul-{consul_port}"))
+            .arg(format!("wiresmith-{consul_port}"))
             .arg("-v")
             .arg(concat!(
                 env!("CARGO_BIN_EXE_wiresmith"),
@@ -86,7 +85,7 @@ impl WiresmithContainer {
             .arg("--network")
             .arg(network)
             .arg("--endpoint-address")
-            .arg(endpoint_address)
+            .arg(&container_name)
             .arg("--update-period")
             .arg("1s")
             .args(args.clone())
