@@ -79,6 +79,17 @@ impl Drop for ConsulContainer {
             .arg(&container_name)
             .output()
             .unwrap_or_else(|_| panic!("Error trying to run podman kill {}", container_name));
+
+        // Remove test container network.
+        Command::new("podman")
+            .arg("network")
+            .arg("rm")
+            // Remove wiresmith container as well, if still present.
+            .arg("-f")
+            .arg(format!("wiresmith-{}", self.http_port))
+            .stdout(Stdio::null())
+            .spawn()
+            .expect("Couldn't remove test container network");
     }
 }
 
@@ -97,6 +108,17 @@ where
     let http_port = port();
     let serf_lan_port = port();
     let server_port = port();
+
+    // Create a dedicated container network for each test using
+    // this fixture.
+    Command::new("podman")
+        .arg("network")
+        .arg("create")
+        .arg(format!("wiresmith-{http_port}"))
+        .stdout(Stdio::null())
+        .spawn()
+        .expect("Couldn't create test container network");
+
     Command::new("podman")
         .arg("run")
         .arg("--name")
@@ -105,6 +127,8 @@ where
         .arg("--rm")
         .arg("--label")
         .arg("testcontainer")
+        .arg("--network")
+        .arg(format!("wiresmith-{http_port}"))
         .arg("-p")
         .arg(format!("{http_port}:{http_port}"))
         .arg("-l")
