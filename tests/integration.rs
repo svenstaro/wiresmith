@@ -192,8 +192,14 @@ async fn join_network(
 ) -> Result<()> {
     let consul = consul.await;
 
-    let _wiresmith_a =
-        WiresmithContainer::new("a", "10.0.0.0/24", consul.http_port, &[], &tmpdir_a).await;
+    let _wiresmith_a = WiresmithContainer::new(
+        "a",
+        "10.0.0.0/24",
+        consul.http_port,
+        &["--update-period", "1s"],
+        &tmpdir_a,
+    )
+    .await;
 
     let network_file_a = tmpdir_a.join("wg0.network");
     let netdev_file_a = tmpdir_a.join("wg0.netdev");
@@ -207,8 +213,14 @@ async fn join_network(
 
     // Start the second peer after the first one has generated its files so we don't run into race
     // conditions with address allocation.
-    let _wiresmith_b =
-        WiresmithContainer::new("b", "10.0.0.0/24", consul.http_port, &[], &tmpdir_b).await;
+    let _wiresmith_b = WiresmithContainer::new(
+        "b",
+        "10.0.0.0/24",
+        consul.http_port,
+        &["--update-period", "1s"],
+        &tmpdir_b,
+    )
+    .await;
 
     let network_file_b = tmpdir_b.join("wg0.network");
     let netdev_file_b = tmpdir_b.join("wg0.netdev");
@@ -254,8 +266,14 @@ async fn join_network(
     assert_eq!(consul_peers, expected_peers);
 
     // The third peer now joins.
-    let _wiresmith_c =
-        WiresmithContainer::new("c", "10.0.0.0/24", consul.http_port, &[], &tmpdir_c).await;
+    let _wiresmith_c = WiresmithContainer::new(
+        "c",
+        "10.0.0.0/24",
+        consul.http_port,
+        &["--update-period", "1s"],
+        &tmpdir_c,
+    )
+    .await;
 
     let network_file_c = tmpdir_c.join("wg0.network");
     let netdev_file_c = tmpdir_c.join("wg0.netdev");
@@ -341,15 +359,17 @@ async fn deletes_peer_on_timeout(
 ) -> Result<()> {
     let consul = consul.await;
     let mut peers: Vec<(WiresmithContainer, WgPeer)> = vec![];
+    let args = &[
+        "--peer-timeout",
+        "10s",
+        "--keepalive",
+        "1s",
+        "--update-period",
+        "5s",
+    ];
 
-    let wiresmith_a = WiresmithContainer::new(
-        "a",
-        "10.0.0.0/24",
-        consul.http_port,
-        &["--peer-timeout", "3s", "--keepalive", "1s"],
-        &tmpdir_a,
-    )
-    .await;
+    let wiresmith_a =
+        WiresmithContainer::new("a", "10.0.0.0/24", consul.http_port, args, &tmpdir_a).await;
 
     let network_file_a = tmpdir_a.join("wg0.network");
     let netdev_file_a = tmpdir_a.join("wg0.netdev");
@@ -366,14 +386,8 @@ async fn deletes_peer_on_timeout(
         },
     ));
 
-    let wiresmith_b = WiresmithContainer::new(
-        "b",
-        "10.0.0.0/24",
-        consul.http_port,
-        &["--peer-timeout", "3s", "--keepalive", "1s"],
-        &tmpdir_b,
-    )
-    .await;
+    let wiresmith_b =
+        WiresmithContainer::new("b", "10.0.0.0/24", consul.http_port, args, &tmpdir_b).await;
 
     let network_file_b = tmpdir_b.join("wg0.network");
     let netdev_file_b = tmpdir_b.join("wg0.netdev");
@@ -390,14 +404,8 @@ async fn deletes_peer_on_timeout(
         },
     ));
 
-    let wiresmith_c = WiresmithContainer::new(
-        "c",
-        "10.0.0.0/24",
-        consul.http_port,
-        &["--peer-timeout", "3s", "--keepalive", "1s"],
-        &tmpdir_c,
-    )
-    .await;
+    let wiresmith_c =
+        WiresmithContainer::new("c", "10.0.0.0/24", consul.http_port, args, &tmpdir_c).await;
 
     let network_file_c = tmpdir_c.join("wg0.network");
     let netdev_file_c = tmpdir_c.join("wg0.netdev");
@@ -414,10 +422,11 @@ async fn deletes_peer_on_timeout(
         },
     ));
 
+    // Wait for consul to pickup changes.
     sleep(Duration::from_secs(1)).await;
 
     let consul_peers = consul.client.get_peers().await?;
-    assert_eq!(consul_peers.len(), 3);
+    assert_eq!(consul_peers.len(), peers.len());
 
     // Kill a random peer.
     let mut rng = rand::thread_rng();
@@ -436,7 +445,7 @@ async fn deletes_peer_on_timeout(
         });
 
     // Wait for a little more than the duration `peer_timeout` to trigger the timeout.
-    std::thread::sleep(Duration::from_secs(5));
+    sleep(Duration::from_secs(20)).await;
 
     let expected_peers = HashSet::from_iter(remaining_peers.into_iter().map(|peer| peer.1.clone()));
 

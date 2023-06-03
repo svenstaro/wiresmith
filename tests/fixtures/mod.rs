@@ -119,6 +119,9 @@ where
         .spawn()
         .expect("Couldn't create test container network");
 
+    // Wait for podman to setup the network.
+    sleep(Duration::from_millis(100)).await;
+
     Command::new("podman")
         .arg("run")
         .arg("--name")
