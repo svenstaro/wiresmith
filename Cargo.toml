@@ -9,7 +9,6 @@ readme = "README.md"
 keywords = ["wireguard", "mesh"]
 categories = ["command-line-utilities", "network-programming"]
 edition = "2021"
-resolver = "2"
 
 [profile.release]
 codegen-units = 1
