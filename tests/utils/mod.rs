@@ -86,7 +86,7 @@ impl WiresmithContainer {
             .arg(network)
             .arg("--endpoint-address")
             .arg(&container_name)
-            .args(args.clone())
+            .args(args)
             // To diagnose issues, it's sometimes helpful to comment out the following line so that
             // we can see log output from the wiresmith instances inside the containers.
             .stdout(Stdio::null())
