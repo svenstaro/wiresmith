@@ -21,7 +21,7 @@ base64 = "0.21"
 clap = { version = "4", features = ["derive", "cargo", "wrap_help", "deprecated"] }
 clap_complete = "4"
 clap_mangen = "0.2"
-file-owner = "0.1.1"
+file-owner = "0.1.2"
 rust-ini = "0.19"
 ipnet = { version = "2", features = ["serde"] }
 pnet = "0.34"
