@@ -83,7 +83,7 @@ impl NetworkdConfiguration {
     pub async fn from_config(networkd_dir: &Path, wg_interface: &str) -> Result<Self> {
         // Get the list of peers in networkd.
         let netdev_path = networkd_dir.join(wg_interface).with_extension("netdev");
-        let netdev_ini = ini::Ini::load_from_file(&netdev_path)?;
+        let netdev_ini = ini::Ini::load_from_file(netdev_path)?;
 
         let wg_port = netdev_ini
             .section(Some("WireGuard"))

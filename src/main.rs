@@ -146,8 +146,8 @@ async fn main() -> Result<()> {
         // Exclude own peer config.
         let peers_without_own_config = peers
             .iter()
+            .filter(|&x| x.public_key != networkd_config.public_key)
             .cloned()
-            .filter(|x| x.public_key != networkd_config.public_key)
             .collect::<HashSet<WgPeer>>();
 
         // If there is a mismatch, write a new networkd configuration.
