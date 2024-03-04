@@ -17,7 +17,7 @@ strip = true
 
 [dependencies]
 anyhow = "1"
-base64 = "0.21"
+base64 = "0.22"
 clap = { version = "4", features = ["derive", "cargo", "wrap_help", "deprecated"] }
 clap_complete = "4"
 clap_mangen = "0.2"
