@@ -5,7 +5,7 @@ prepare-test:
 test:
     cargo test
 
-# Interactive test using tmux and podman
+# Interactive test using zellij and podman
 interactive:
     cargo build
 
