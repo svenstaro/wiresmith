@@ -20,6 +20,7 @@ use crate::wireguard::WgPeer;
 pub struct ConsulClient {
     pub http_client: reqwest::Client,
     pub kv_api_base_url: Url,
+    pub datacenter: Option<String>,
 }
 
 #[derive(Debug, Eq, PartialEq, Hash, Deserialize)]
@@ -51,6 +52,7 @@ impl ConsulClient {
         consul_address: Url,
         consul_prefix: &str,
         consul_token: Option<&str>,
+        consul_datacenter: Option<String>,
     ) -> Result<ConsulClient> {
         // Make sure the consul prefix ends with a /.
         let consul_prefix = if consul_prefix.ends_with('/') {
@@ -80,15 +82,23 @@ impl ConsulClient {
         Ok(ConsulClient {
             http_client: client,
             kv_api_base_url,
+            datacenter: consul_datacenter,
         })
     }
 
     /// Read out all configs.
     #[tracing::instrument(skip(self))]
     pub async fn get_peers(&self) -> Result<HashSet<WgPeer>> {
+        let mut peers_url = self.kv_api_base_url.join("peers/")?;
+        peers_url.query_pairs_mut().append_pair("recurse", "true");
+
+        if let Some(dc) = &self.datacenter {
+            peers_url.query_pairs_mut().append_pair("dc", dc);
+        }
+
         let resp = self
             .http_client
-            .get(self.kv_api_base_url.join("peers/")?.join("?recurse=true")?)
+            .get(peers_url)
             .send()
             .await?
             .error_for_status();
@@ -119,12 +129,17 @@ impl ConsulClient {
     /// Add own config.
     #[tracing::instrument(skip(self, wgpeer))]
     pub async fn put_config(&self, wgpeer: WgPeer) -> Result<()> {
+        let mut peer_url = self
+            .kv_api_base_url
+            .join("peers/")?
+            .join(&wgpeer.public_key.to_base64_urlsafe())?;
+
+        if let Some(dc) = &self.datacenter {
+            peer_url.query_pairs_mut().append_pair("dc", dc);
+        }
+
         self.http_client
-            .put(
-                self.kv_api_base_url
-                    .join("peers/")?
-                    .join(&wgpeer.public_key.to_base64_urlsafe())?,
-            )
+            .put(peer_url)
             .json(&wgpeer)
             .send()
             .await?
@@ -136,12 +151,17 @@ impl ConsulClient {
     /// Remove a peer config from Consul
     #[tracing::instrument(skip(self, public_key))]
     pub async fn delete_config(&self, public_key: Pubkey) -> Result<()> {
+        let mut peer_url = self
+            .kv_api_base_url
+            .join("peers/")?
+            .join(&public_key.to_base64_urlsafe())?;
+
+        if let Some(dc) = &self.datacenter {
+            peer_url.query_pairs_mut().append_pair("dc", dc);
+        }
+
         self.http_client
-            .delete(
-                self.kv_api_base_url
-                    .join("peers/")?
-                    .join(&public_key.to_base64_urlsafe())?,
-            )
+            .delete(peer_url)
             .send()
             .await?
             .error_for_status()?;
@@ -168,9 +188,16 @@ impl ConsulClient {
                 self.drop_lock().await?;
             }
 
+            let mut lock_url = self.kv_api_base_url.join("lock")?;
+            lock_url.query_pairs_mut().append_pair("cas", "0");
+
+            if let Some(dc) = &self.datacenter {
+                lock_url.query_pairs_mut().append_pair("dc", dc);
+            }
+
             let resp = self
                 .http_client
-                .put(self.kv_api_base_url.join("lock?cas=0")?)
+                .put(lock_url)
                 .json(&lock)
                 .send()
                 .await?
@@ -187,8 +214,14 @@ impl ConsulClient {
     /// Drop a lock
     #[tracing::instrument(skip(self))]
     pub async fn drop_lock(&self) -> Result<()> {
+        let mut lock_url = self.kv_api_base_url.join("lock")?;
+
+        if let Some(dc) = &self.datacenter {
+            lock_url.query_pairs_mut().append_pair("dc", dc);
+        }
+
         self.http_client
-            .delete(self.kv_api_base_url.join("lock")?)
+            .delete(lock_url)
             .send()
             .await?
             .error_for_status()?;

@@ -26,6 +26,10 @@ pub struct CliArgs {
     #[arg(long, default_value = "wiresmith")]
     pub consul_prefix: String,
 
+    /// Consul datacenter
+    #[arg(long)]
+    pub consul_datacenter: Option<String>,
+
     /// Update period - how often to check for peer updates
     #[arg(short, long, default_value = "10s", value_parser = humantime::parse_duration)]
     pub update_period: Duration,

@@ -61,6 +61,7 @@ impl ConsulContainer {
             format!("http://localhost:{port}").parse().unwrap(),
             "wiresmith",
             None,
+            None,
         )
         .unwrap();
         Self {
@@ -154,4 +155,109 @@ where
         start_time.elapsed()
     );
     consul
+}
+
+/// Run a federated Consul cluster with two datacenters
+///
+/// Start with a free port and some optional arguments then wait for a while for the server setup
+/// to complete.
+#[fixture]
+pub async fn federated_consul_cluster<I>(
+    #[default(&[] as &[&str])] args: I,
+) -> (ConsulContainer, ConsulContainer)
+where
+    I: IntoIterator + Clone,
+    I::Item: AsRef<std::ffi::OsStr>,
+{
+    let start_time = Instant::now();
+
+    let http_port_dc1 = port();
+
+    // Create a dedicated container network for each test using
+    // this fixture.
+    Command::new("podman")
+        .arg("network")
+        .arg("create")
+        .arg(format!("wiresmith-{http_port_dc1}"))
+        .stdout(Stdio::null())
+        .spawn()
+        .expect("Couldn't create test container network");
+
+    // Wait for podman to setup the network.
+    sleep(Duration::from_millis(100)).await;
+
+    Command::new("podman")
+        .arg("run")
+        .args(["--name", &format!("consul-{http_port_dc1}")])
+        .arg("--replace")
+        .arg("--rm")
+        .args(["--label", "testcontainer"])
+        .args(["--label", &format!("testport={http_port_dc1}")])
+        .args(["--network", &format!("wiresmith-{http_port_dc1}")])
+        .args(["-p", &format!("{http_port_dc1}:{http_port_dc1}")])
+        .arg("docker.io/hashicorp/consul")
+        .arg("agent")
+        .arg("-dev")
+        .args(["-datacenter", "dc1"])
+        .args(["-bind", "{{ GetInterfaceIP \"eth0\" }}"])
+        .args(["-client", "0.0.0.0"])
+        .args(["-http-port", &http_port_dc1.to_string()])
+        .args(["-grpc-port", "0"])
+        .args(["-grpc-tls-port", "0"])
+        .args(["-dns-port", "0"])
+        .args(["-serf-lan-port", &port().to_string()])
+        .args(["-server-port", &port().to_string()])
+        .args(args.clone())
+        .stdout(Stdio::null())
+        .spawn()
+        .expect("Couldn't run Consul binary");
+
+    let consul_dc1 = ConsulContainer::new(http_port_dc1);
+    wait_for_api(&consul_dc1)
+        .await
+        .expect("Error while waiting for Consul API");
+    println!(
+        "Started Consul in dc1 after {:?} on HTTP port {http_port_dc1}",
+        start_time.elapsed()
+    );
+
+    let http_port_dc2 = port();
+    Command::new("podman")
+        .arg("run")
+        .args(["--name", &format!("consul-{http_port_dc2}")])
+        .arg("--replace")
+        .arg("--rm")
+        .args(["--label", "testcontainer"])
+        .args(["--label", &format!("testport={http_port_dc2}")])
+        .args(["--network", &format!("wiresmith-{http_port_dc1}")])
+        .args(["-p", &format!("{http_port_dc2}:{http_port_dc2}")])
+        .arg("docker.io/hashicorp/consul")
+        .arg("agent")
+        .arg("-dev")
+        .args(["--datacenter", "dc2"])
+        // This is the part that makes this a federated cluster.
+        .args(["-retry-join-wan", &format!("consul-{http_port_dc1}")])
+        .args(["-bind", "{{ GetInterfaceIP \"eth0\" }}"])
+        .args(["-client", "0.0.0.0"])
+        .args(["-http-port", &http_port_dc2.to_string()])
+        .args(["-grpc-port", "0"])
+        .args(["-grpc-tls-port", "0"])
+        .args(["-dns-port", "0"])
+        .args(["-serf-lan-port", &port().to_string()])
+        .args(["-server-port", &port().to_string()])
+        .args(args.clone())
+        .stdout(Stdio::null())
+        .spawn()
+        .expect("Couldn't run Consul binary");
+
+    let consul_dc2 = ConsulContainer::new(http_port_dc2);
+    wait_for_api(&consul_dc1)
+        .await
+        .expect("Error while waiting for Consul API");
+    println!(
+        "Started Consul in dc2 after {:?} on HTTP port {http_port_dc2}",
+        start_time.elapsed()
+    );
+
+    (consul_dc1, consul_dc2)
 }
