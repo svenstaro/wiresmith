@@ -37,6 +37,7 @@ impl WiresmithContainer {
     pub async fn new(
         name: &str,
         network: &str,
+        container_network: &str,
         consul_port: u16,
         args: &[&str],
         dir: &Path,
@@ -46,26 +47,22 @@ impl WiresmithContainer {
         // Launch archlinux container with systemd inside.
         Command::new("podman")
             .arg("run")
-            .arg("--name")
-            .arg(&container_name)
+            .args(["--name", &container_name])
             .arg("--replace")
             .arg("--rm")
-            .arg("--label")
-            .arg("testcontainer")
-            .arg("--cap-add")
+            .args(["--label", "testcontainer"])
             // SYS_ADMIN could be removed when https://github.com/systemd/systemd/pull/26478 is released
-            .arg("SYS_ADMIN,NET_ADMIN")
-            .arg("--network")
-            .arg(format!("wiresmith-{consul_port}"))
-            .arg("-v")
-            .arg(concat!(
-                env!("CARGO_BIN_EXE_wiresmith"),
-                ":/usr/bin/wiresmith"
-            ))
-            .arg("-v")
-            .arg(format!("{}:/etc/systemd/network", dir.to_string_lossy()))
-            .arg("--tz")
-            .arg("UTC")
+            .args(["--cap-add", "SYS_ADMIN,NET_ADMIN"])
+            .args(["--network", container_network])
+            .args([
+                "-v",
+                concat!(env!("CARGO_BIN_EXE_wiresmith"), ":/usr/bin/wiresmith"),
+            ])
+            .args([
+                "-v",
+                &format!("{}:/etc/systemd/network", dir.to_string_lossy()),
+            ])
+            .args(["--tz", "UTC"])
             .arg("wiresmith-testing")
             .stdout(Stdio::null())
             .spawn()
@@ -80,12 +77,12 @@ impl WiresmithContainer {
             .arg("exec")
             .arg(&container_name)
             .arg("wiresmith")
-            .arg("--consul-address")
-            .arg(format!("http://consul-{consul_port}:{consul_port}"))
-            .arg("--network")
-            .arg(network)
-            .arg("--endpoint-address")
-            .arg(&container_name)
+            .args([
+                "--consul-address",
+                &format!("http://consul-{consul_port}:{consul_port}"),
+            ])
+            .args(["--network", network])
+            .args(["--endpoint-address", &container_name])
             .args(args)
             // To diagnose issues, it's sometimes helpful to comment out the following line so that
             // we can see log output from the wiresmith instances inside the containers.

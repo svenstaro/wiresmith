@@ -6,7 +6,7 @@ use std::{collections::HashSet, time::Duration};
 use anyhow::{ensure, Result};
 use assert_fs::TempDir;
 use configparser::ini::Ini;
-use fixtures::{consul, tmpdir, ConsulContainer};
+use fixtures::{consul, federated_consul_cluster, tmpdir, ConsulContainer};
 use pretty_assertions::assert_eq;
 use rand::seq::SliceRandom;
 use rstest::rstest;
@@ -52,8 +52,15 @@ async fn address_contained_within_network(
 async fn initial_configuration(#[future] consul: ConsulContainer, tmpdir: TempDir) -> Result<()> {
     let consul = consul.await;
 
-    let wiresmith =
-        WiresmithContainer::new("initial", "10.0.0.0/24", consul.http_port, &[], &tmpdir).await;
+    let wiresmith = WiresmithContainer::new(
+        "initial",
+        "10.0.0.0/24",
+        &format!("wiresmith-{}", consul.http_port),
+        consul.http_port,
+        &[],
+        &tmpdir,
+    )
+    .await;
 
     let network_file = tmpdir.join("wg0.network");
     let netdev_file = tmpdir.join("wg0.netdev");
@@ -195,6 +202,7 @@ async fn join_network(
     let _wiresmith_a = WiresmithContainer::new(
         "a",
         "10.0.0.0/24",
+        &format!("wiresmith-{}", consul.http_port),
         consul.http_port,
         &["--update-period", "1s"],
         &tmpdir_a,
@@ -216,6 +224,7 @@ async fn join_network(
     let _wiresmith_b = WiresmithContainer::new(
         "b",
         "10.0.0.0/24",
+        &format!("wiresmith-{}", consul.http_port),
         consul.http_port,
         &["--update-period", "1s"],
         &tmpdir_b,
@@ -269,6 +278,7 @@ async fn join_network(
     let _wiresmith_c = WiresmithContainer::new(
         "c",
         "10.0.0.0/24",
+        &format!("wiresmith-{}", consul.http_port),
         consul.http_port,
         &["--update-period", "1s"],
         &tmpdir_c,
@@ -347,6 +357,84 @@ async fn join_network(
     Ok(())
 }
 
+/// A peer is added to the first Consul server in dc1 which is federated to a second Consul server
+/// in dc2. Afterwards, a second peer joins on the second Consul server.
+#[rstest]
+#[tokio::test]
+async fn join_network_federated_cluster(
+    #[future] federated_consul_cluster: (ConsulContainer, ConsulContainer),
+    #[from(tmpdir)] tmpdir_a: TempDir,
+    #[from(tmpdir)] tmpdir_b: TempDir,
+) -> Result<()> {
+    let (consul_dc1, consul_dc2) = federated_consul_cluster.await;
+
+    let _wiresmith_a = WiresmithContainer::new(
+        "a",
+        "10.0.0.0/24",
+        &format!("wiresmith-{}", consul_dc1.http_port),
+        consul_dc1.http_port,
+        // This Wiresmith instance is already implicitly connected to dc1. We're just making this
+        // explicit here.
+        &["--update-period", "1s", "--consul-datacenter", "dc1"],
+        &tmpdir_a,
+    )
+    .await;
+
+    let network_file_a = tmpdir_a.join("wg0.network");
+    let netdev_file_a = tmpdir_a.join("wg0.netdev");
+
+    wait_for_files(vec![network_file_a.as_path(), netdev_file_a.as_path()]).await;
+
+    // Start the second peer after the first one has generated its files so we don't run into race
+    // conditions with address allocation.
+    let _wiresmith_b = WiresmithContainer::new(
+        "b",
+        "10.0.0.0/24",
+        &format!("wiresmith-{}", consul_dc1.http_port),
+        consul_dc2.http_port,
+        // This Wiresmith instance is connected to the Consul in dc2. However, we'll make it use
+        // the Consul KV in dc1 so that we have a consistent view of peers as Consul doesn't
+        // replicate its KV to federated clusters.
+        &["--update-period", "1s", "--consul-datacenter", "dc1"],
+        &tmpdir_b,
+    )
+    .await;
+
+    let network_file_b = tmpdir_b.join("wg0.network");
+    let netdev_file_b = tmpdir_b.join("wg0.netdev");
+
+    wait_for_files(vec![network_file_b.as_path(), netdev_file_b.as_path()]).await;
+
+    // Wait until the first client has had a chance to pick up the changes and generate a new
+    // config. If this is flaky, increase this number slightly.
+    sleep(Duration::from_secs(2)).await;
+
+    let networkd_config_a = NetworkdConfiguration::from_config(&tmpdir_a, "wg0").await?;
+    let networkd_config_b = NetworkdConfiguration::from_config(&tmpdir_b, "wg0").await?;
+
+    let mut expected_peers = HashSet::new();
+    expected_peers.insert(WgPeer {
+        public_key: networkd_config_a.public_key,
+        endpoint: format!("a-{}:51820", consul_dc1.http_port),
+        address: "10.0.0.1/32".parse().unwrap(),
+    });
+    expected_peers.insert(WgPeer {
+        public_key: networkd_config_b.public_key,
+        endpoint: format!("b-{}:51820", consul_dc2.http_port),
+        address: "10.0.0.2/32".parse().unwrap(),
+    });
+
+    // Peers in Consul should be union the other peer lists.
+    let consul_peers_dc1 = consul_dc1.client.get_peers().await?;
+    assert_eq!(consul_peers_dc1, expected_peers);
+
+    // dc2 should have no peers as we were using only dc1.
+    let consul_peers_dc2 = consul_dc2.client.get_peers().await?;
+    assert!(consul_peers_dc2.is_empty());
+
+    Ok(())
+}
+
 /// Three peers join the network. A randomly stopped peer should be removed by
 /// consul after the defined timeout.
 #[rstest]
@@ -368,8 +456,15 @@ async fn deletes_peer_on_timeout(
         "5s",
     ];
 
-    let wiresmith_a =
-        WiresmithContainer::new("a", "10.0.0.0/24", consul.http_port, args, &tmpdir_a).await;
+    let wiresmith_a = WiresmithContainer::new(
+        "a",
+        "10.0.0.0/24",
+        &format!("wiresmith-{}", consul.http_port),
+        consul.http_port,
+        args,
+        &tmpdir_a,
+    )
+    .await;
 
     let network_file_a = tmpdir_a.join("wg0.network");
     let netdev_file_a = tmpdir_a.join("wg0.netdev");
@@ -386,8 +481,15 @@ async fn deletes_peer_on_timeout(
         },
     ));
 
-    let wiresmith_b =
-        WiresmithContainer::new("b", "10.0.0.0/24", consul.http_port, args, &tmpdir_b).await;
+    let wiresmith_b = WiresmithContainer::new(
+        "b",
+        "10.0.0.0/24",
+        &format!("wiresmith-{}", consul.http_port),
+        consul.http_port,
+        args,
+        &tmpdir_b,
+    )
+    .await;
 
     let network_file_b = tmpdir_b.join("wg0.network");
     let netdev_file_b = tmpdir_b.join("wg0.netdev");
@@ -404,8 +506,15 @@ async fn deletes_peer_on_timeout(
         },
     ));
 
-    let wiresmith_c =
-        WiresmithContainer::new("c", "10.0.0.0/24", consul.http_port, args, &tmpdir_c).await;
+    let wiresmith_c = WiresmithContainer::new(
+        "c",
+        "10.0.0.0/24",
+        &format!("wiresmith-{}", consul.http_port),
+        consul.http_port,
+        args,
+        &tmpdir_c,
+    )
+    .await;
 
     let network_file_c = tmpdir_c.join("wg0.network");
     let netdev_file_c = tmpdir_c.join("wg0.netdev");

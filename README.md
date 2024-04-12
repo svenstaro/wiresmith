@@ -17,7 +17,7 @@ can also clean up dead peers if desired.
 - Automatic address allocation
 - Mesh connectivity
 - IPv4/IPv6
-- Value store backends: Consul
+- Value store backends: Consul (with datacenter selection for federated clusters)
 - Network configuration backends: systemd-networkd
 - Cleanup of dead peers
 - Pretty logging!
@@ -41,6 +41,13 @@ The endpoint interface needs to be reachable from all the other peers.
 
 By default, peers that we haven't received a handshake from within 10 minutes are removed.
 
+If you use [Consul
+Federation](https://developer.hashicorp.com/consul/tutorials/networking/federation-gossip-wan), be
+aware that Consul KV keys aren't automatically replicated amongst datacenters. In this case, it is
+recommended to select a datacenter to be the single source of truth for Wiresmith. You can use the
+`--consul-datacenter` flag in that case to make sure that the same datacenter is always selected
+regardless of where the request is coming from.
+
 ## Usage
 
     Auto-config WireGuard clients into a mesh
@@ -61,10 +68,11 @@ By default, peers that we haven't received a handshake from within 10 minutes ar
 
               [default: wiresmith]
 
+          --consul-datacenter <CONSUL_DATACENTER>
+              Consul datacenter
+
       -u, --update-period <UPDATE_PERIOD>
               Update period - how often to check for peer updates
-
-              Parses human-friendly time, e.g. 15s
 
               [default: 10s]
 
@@ -81,10 +89,16 @@ By default, peers that we haven't received a handshake from within 10 minutes ar
       -t, --peer-timeout <PEER_TIMEOUT>
               Remove disconnected peers after this duration
 
-              Parses human-friendly time, e.g. 5min
               Set to 0 in order to disable.
 
               [default: 10min]
+
+      -k, --keepalive <KEEPALIVE>
+              Set persistent keepalive option for wireguard
+
+              Set to 0 in order to disable.
+
+              [default: 25s]
 
           --endpoint-interface <ENDPOINT_INTERFACE>
               Public endpoint interface name
@@ -117,8 +131,10 @@ By default, peers that we haven't received a handshake from within 10 minutes ar
 
               Must be the same for all clients. For instance 10.0.0.0/24 or fc00::/64
 
-      -v, --verbose
+      -v, --verbose...
               Be verbose
+
+              Provide twice for very verbose.
 
       -h, --help
               Print help (see a summary with '-h')
