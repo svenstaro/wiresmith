@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+
+## [0.3.0] - 2024-04-12
 - Use latest data transmission date instead of latest handshake for timeouts [#17](https://github.com/svenstaro/wiresmith/pull/17) (thanks @tomgroenwoldt)
 - Added `--consul-datacenter` option
 
@@ -27,7 +29,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - Initial release
 
 <!-- next-url -->
-[Unreleased]: https://github.com/svenstaro/wiresmith/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/svenstaro/wiresmith/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/svenstaro/wiresmith/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/svenstaro/wiresmith/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/svenstaro/wiresmith/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/svenstaro/wiresmith/compare/v0.1.0...v0.1.2
