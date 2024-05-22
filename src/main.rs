@@ -63,7 +63,6 @@ async fn main() -> Result<()> {
         unreachable!("Should have been handled by arg parsing");
     };
 
-    consul_client.acquire_lock().await?;
     info!("Getting existing peers from Consul");
     let peers = consul_client.get_peers().await?;
     if peers.is_empty() {
@@ -98,7 +97,6 @@ async fn main() -> Result<()> {
 
     info!("Restarting systemd-networkd");
     NetworkdConfiguration::restart().await?;
-    consul_client.drop_lock().await?;
 
     // Stores amount of received bytes together with a timestamp for every peer.
     let mut received_bytes: HashMap<wireguard_keys::Pubkey, (usize, Instant)> = HashMap::new();
@@ -133,7 +131,6 @@ async fn main() -> Result<()> {
             }
         }
 
-        consul_client.acquire_lock().await?;
         trace!("Checking Consul for peer updates");
         let peers = consul_client
             .get_peers()
@@ -206,7 +203,6 @@ async fn main() -> Result<()> {
                 .context("Failed to put peer config into Consul")?;
             info!("Wrote own WireGuard peer config to Consul");
         }
-        consul_client.drop_lock().await?;
 
         sleep(args.update_period).await;
     }

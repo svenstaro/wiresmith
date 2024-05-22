@@ -1,7 +1,4 @@
-use std::{
-    collections::HashSet,
-    time::{Duration, Instant, SystemTime},
-};
+use std::collections::HashSet;
 
 use anyhow::{anyhow, Result};
 use base64::prelude::{Engine as _, BASE64_STANDARD};
@@ -9,9 +6,8 @@ use reqwest::{
     header::{HeaderMap, HeaderName, HeaderValue},
     StatusCode, Url,
 };
-use serde::{Deserialize, Serialize};
-use tokio::time::sleep;
-use tracing::{info, trace, warn};
+use serde::Deserialize;
+use tracing::info;
 use wireguard_keys::Pubkey;
 
 use crate::wireguard::WgPeer;
@@ -32,19 +28,6 @@ pub struct ConsulKvGet {
     pub lock_index: u64,
     pub modify_index: u64,
     pub value: String,
-}
-
-#[derive(Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-struct Lock {
-    pub locked_at: SystemTime,
-}
-
-impl Lock {
-    fn new() -> Self {
-        Self {
-            locked_at: SystemTime::now(),
-        }
-    }
 }
 
 impl ConsulClient {
@@ -169,63 +152,6 @@ impl ConsulClient {
             "Deleted peer {} config from Consul",
             public_key.to_base64_urlsafe()
         );
-        Ok(())
-    }
-
-    /// Acquire a lock
-    ///
-    /// Times out after a while and returns an error if it does.
-    #[tracing::instrument(skip(self))]
-    pub async fn acquire_lock(&self) -> Result<()> {
-        let lock = Lock::new();
-        let wait_time = Instant::now();
-        let timeout = Duration::from_secs(10);
-
-        loop {
-            if wait_time.elapsed() > timeout {
-                warn!("Timed out trying to acquire lock");
-                warn!("Assuming poisoned lock, deleting last lock");
-                self.drop_lock().await?;
-            }
-
-            let mut lock_url = self.kv_api_base_url.join("lock")?;
-            lock_url.query_pairs_mut().append_pair("cas", "0");
-
-            if let Some(dc) = &self.datacenter {
-                lock_url.query_pairs_mut().append_pair("dc", dc);
-            }
-
-            let resp = self
-                .http_client
-                .put(lock_url)
-                .json(&lock)
-                .send()
-                .await?
-                .error_for_status()?;
-            let body = resp.text().await?;
-            if body.starts_with("true") {
-                trace!("Acquired Consul lock");
-                return Ok(());
-            }
-            sleep(Duration::from_millis(100)).await;
-        }
-    }
-
-    /// Drop a lock
-    #[tracing::instrument(skip(self))]
-    pub async fn drop_lock(&self) -> Result<()> {
-        let mut lock_url = self.kv_api_base_url.join("lock")?;
-
-        if let Some(dc) = &self.datacenter {
-            lock_url.query_pairs_mut().append_pair("dc", dc);
-        }
-
-        self.http_client
-            .delete(lock_url)
-            .send()
-            .await?
-            .error_for_status()?;
-        trace!("Dropped Consul lock");
         Ok(())
     }
 }
