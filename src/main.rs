@@ -73,11 +73,11 @@ async fn main() -> Result<()> {
     }
 
     // Check whether we can find and parse an existing config.
-    if NetworkdConfiguration::from_config(&args.networkd_dir, &args.wg_interface)
-        .await
-        .is_ok()
+    let own_public_key = if let Ok(config) =
+        NetworkdConfiguration::from_config(&args.networkd_dir, &args.wg_interface).await
     {
         info!("Successfully loading existing systemd-networkd config");
+        config.public_key
     } else {
         info!("No existing WireGuard configuration found on system, creating a new one");
 
@@ -93,7 +93,8 @@ async fn main() -> Result<()> {
             .write_config(&args.networkd_dir, args.keepalive)
             .await?;
         info!("Our new config is:\n{:#?}", networkd_config);
-    }
+        networkd_config.public_key
+    };
 
     info!("Restarting systemd-networkd");
     NetworkdConfiguration::restart().await?;
@@ -204,6 +205,21 @@ async fn main() -> Result<()> {
             info!("Wrote own WireGuard peer config to Consul");
         }
 
-        sleep(args.update_period).await;
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                info!("Received SIGINT, shutting down");
+                break;
+            },
+            _ = sleep(args.update_period) => continue,
+        };
     }
+
+    // Delete our own peer on shutdown. If we don't do this then it might take up to
+    // `--peer-timeout` amount of time until a new node with the same public IP can join the mesh.
+    consul_client
+        .delete_config(own_public_key)
+        .await
+        .context("Couldn't delete self from Consul")?;
+
+    Ok(())
 }
