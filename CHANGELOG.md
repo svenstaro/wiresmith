@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+- Remove self from the Consul state when wiresmith shuts down [#200](https://github.com/svenstaro/wiresmith/pull/200) (thanks @kyrias)
 
 ## [0.3.0] - 2024-04-12
 - Use latest data transmission date instead of latest handshake for timeouts [#17](https://github.com/svenstaro/wiresmith/pull/17) (thanks @tomgroenwoldt)
