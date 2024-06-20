@@ -91,13 +91,6 @@ regardless of where the request is coming from.
 
               [default: 51820]
 
-      -t, --peer-timeout <PEER_TIMEOUT>
-              Remove disconnected peers after this duration
-
-              Set to 0 in order to disable.
-
-              [default: 10min]
-
       -k, --keepalive <KEEPALIVE>
               Set persistent keepalive option for wireguard
 

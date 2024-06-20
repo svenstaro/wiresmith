@@ -7,13 +7,31 @@ use reqwest::{
     StatusCode, Url,
 };
 use serde::{Deserialize, Serialize};
-use tokio::{task::JoinHandle, time::interval};
+use tokio::{
+    task::{JoinError, JoinHandle},
+    time::interval,
+};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, trace, warn};
 use uuid::Uuid;
 use wireguard_keys::Pubkey;
 
 use crate::wireguard::WgPeer;
+
+/// Allows for gracefully telling a background task to shut down and to then join it.
+#[must_use]
+pub struct TaskCancellator {
+    join_handle: JoinHandle<()>,
+    token: CancellationToken,
+}
+
+impl TaskCancellator {
+    #[tracing::instrument(skip(self))]
+    pub async fn cancel(self) -> Result<(), JoinError> {
+        self.token.cancel();
+        self.join_handle.await
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct ConsulClient {
@@ -167,52 +185,6 @@ impl ConsulClient {
         }
     }
 
-    /// Add own config.
-    #[tracing::instrument(skip(self, wgpeer))]
-    pub async fn put_config(&self, wgpeer: WgPeer) -> Result<()> {
-        let mut peer_url = self
-            .kv_api_base_url
-            .join("peers/")?
-            .join(&wgpeer.public_key.to_base64_urlsafe())?;
-
-        if let Some(dc) = &self.datacenter {
-            peer_url.query_pairs_mut().append_pair("dc", dc);
-        }
-
-        self.http_client
-            .put(peer_url)
-            .json(&wgpeer)
-            .send()
-            .await?
-            .error_for_status()?;
-        info!("Wrote node config into Consul");
-        Ok(())
-    }
-
-    /// Remove a peer config from Consul
-    #[tracing::instrument(skip(self, public_key))]
-    pub async fn delete_config(&self, public_key: Pubkey) -> Result<()> {
-        let mut peer_url = self
-            .kv_api_base_url
-            .join("peers/")?
-            .join(&public_key.to_base64_urlsafe())?;
-
-        if let Some(dc) = &self.datacenter {
-            peer_url.query_pairs_mut().append_pair("dc", dc);
-        }
-
-        self.http_client
-            .delete(peer_url)
-            .send()
-            .await?
-            .error_for_status()?;
-        info!(
-            "Deleted peer {} config from Consul",
-            public_key.to_base64_urlsafe()
-        );
-        Ok(())
-    }
-
     /// # Create a Consul session
     ///
     /// This starts a background task which renews the session based on the given session TTL. If
@@ -224,7 +196,7 @@ impl ConsulClient {
         &self,
         public_key: Pubkey,
         ttl: Duration,
-        token: CancellationToken,
+        parent_token: CancellationToken,
     ) -> Result<ConsulSession> {
         let url = self.api_base_url.join("v1/session/create")?;
 
@@ -242,18 +214,27 @@ impl ConsulClient {
             .json::<CreateSessionResponse>()
             .await?;
 
+        let session_token = CancellationToken::new();
         let join_handle = tokio::spawn(
-            session_handler(self.clone(), token, res.id, ttl)
-                .context("failed to create Consul session handler")?,
+            session_handler(
+                self.clone(),
+                session_token.clone(),
+                parent_token,
+                res.id,
+                ttl,
+            )
+            .context("failed to create Consul session handler")?,
         );
 
-        Ok(ConsulSession { join_handle })
+        Ok(ConsulSession {
+            client: self.clone(),
+            id: res.id,
+            cancellator: TaskCancellator {
+                join_handle,
+                token: session_token,
+            },
+        })
     }
-}
-
-
-pub struct ConsulSession {
-    pub join_handle: JoinHandle<()>,
 }
 
 /// # Create a background task maintaining a Consul session
@@ -267,7 +248,8 @@ pub struct ConsulSession {
 /// cancelled to let the rest of the application know that the session is no longer valid.
 fn session_handler(
     client: ConsulClient,
-    token: CancellationToken,
+    session_token: CancellationToken,
+    parent_token: CancellationToken,
     id: Uuid,
     ttl: Duration,
 ) -> Result<impl Future<Output = ()> + Send> {
@@ -294,7 +276,7 @@ fn session_handler(
         loop {
             // Wait for either cancellation or an interval tick to have passed.
             tokio::select! {
-                _ = token.cancelled() => {
+                _ = session_token.cancelled() => {
                     trace!("Consul session handler was cancelled");
                     break;
                 },
@@ -310,7 +292,7 @@ fn session_handler(
                 .and_then(|res| res.error_for_status());
             if let Err(err) = res {
                 error!("Renewing Consul session failed, aborting: {err}");
-                token.cancel();
+                parent_token.cancel();
                 return;
             }
         }
@@ -326,4 +308,103 @@ fn session_handler(
             warn!("Destraying Consul session failed: {err}");
         }
     })
+}
+
+pub struct ConsulSession {
+    client: ConsulClient,
+    id: Uuid,
+    cancellator: TaskCancellator,
+}
+
+impl ConsulSession {
+    #[tracing::instrument(skip(self))]
+    pub async fn cancel(self) -> Result<(), JoinError> {
+        self.cancellator.cancel().await
+    }
+
+    /// Add own config.
+    ///
+    /// This locks the key with this session's ID to ensure that the key is deleted if the session
+    /// is invalidated, either because we destroyed the session ourselves, or because we didn't
+    /// renew the session within the TTL and it expired.
+    #[tracing::instrument(skip(self, wgpeer))]
+    pub async fn put_config(
+        &self,
+        wgpeer: WgPeer,
+        parent_token: CancellationToken,
+    ) -> Result<TaskCancellator> {
+        let peer_url = self
+            .client
+            .kv_api_base_url
+            .join("peers/")?
+            .join(&wgpeer.public_key.to_base64_urlsafe())?;
+
+        let mut put_url = peer_url.clone();
+        put_url
+            .query_pairs_mut()
+            .append_pair("acquire", &self.id.to_string());
+
+        self.client
+            .http_client
+            .put(put_url)
+            .json(&wgpeer)
+            .send()
+            .await?
+            .error_for_status()
+            .context("failed to put node config into Consul")?;
+        info!("Wrote node config into Consul");
+
+        let client = self.client.clone();
+        let config_token = CancellationToken::new();
+        let join_handle = tokio::spawn({
+            let config_token = config_token.clone();
+            async move {
+                let mut index = None;
+                loop {
+                    let res = tokio::select! {
+                        _ = config_token.cancelled() => break,
+                        res = ensure_config_exists(&client, peer_url.clone(), &mut index) => res,
+                    };
+                    if let Err(err) = res {
+                        error!("Could not get own node config from Consul, cancelling: {err}");
+                        parent_token.cancel();
+                    }
+                }
+            }
+        });
+
+        Ok(TaskCancellator {
+            join_handle,
+            token: config_token,
+        })
+    }
+}
+
+async fn ensure_config_exists(
+    client: &ConsulClient,
+    peer_url: Url,
+    index: &mut Option<String>,
+) -> Result<()> {
+    let query: &[_] = if let Some(index) = index {
+        &[("index", index)]
+    } else {
+        &[]
+    };
+    let res = client
+        .http_client
+        .get(peer_url)
+        .query(query)
+        .send()
+        .await?
+        .error_for_status()?;
+
+    if let Some(new_index) = res.headers().get("X-Consul-Index") {
+        let new_index = new_index
+            .to_str()
+            .context("Failed to convert new Consul index to String")?
+            .to_string();
+        index.replace(new_index);
+    };
+
+    Ok(())
 }

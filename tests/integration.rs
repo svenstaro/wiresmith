@@ -450,8 +450,6 @@ async fn deletes_peer_on_timeout(
     let args = &[
         "--consul-ttl",
         "10s",
-        "--peer-timeout",
-        "10s",
         "--keepalive",
         "1s",
         "--update-period",

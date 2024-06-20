@@ -46,12 +46,6 @@ pub struct CliArgs {
     #[arg(short = 'p', long, default_value = "51820")]
     pub wg_port: u16,
 
-    /// Remove disconnected peers after this duration
-    ///
-    /// Set to 0 in order to disable.
-    #[arg(short = 't', long, default_value = "10min", value_parser = humantime::parse_duration)]
-    pub peer_timeout: Duration,
-
     /// Set persistent keepalive option for wireguard
     ///
     /// Set to 0 in order to disable.
