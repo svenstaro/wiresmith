@@ -63,6 +63,11 @@ regardless of where the request is coming from.
           --consul-token <CONSUL_TOKEN>
               Consul secret token
 
+          --consul-ttl <CONSUL_TTL>
+              Consul TTL times out after this duration without being renewed
+
+              [default: 1min]
+
           --consul-prefix <CONSUL_PREFIX>
               Consul KV prefix
 

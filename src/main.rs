@@ -8,6 +8,7 @@ use std::{
 use anyhow::{ensure, Context, Result};
 use clap::Parser;
 use tokio::time::sleep;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, trace};
 
 use wiresmith::{
@@ -18,6 +19,18 @@ use wiresmith::{
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Spawn a task to cancel us if we receive a SIGINT.
+    let token = CancellationToken::new();
+    tokio::spawn({
+        let token = token.clone();
+        async move {
+            tokio::signal::ctrl_c()
+                .await
+                .expect("failed to listen for SIGINT");
+            token.cancel();
+        }
+    });
+
     let args = args::CliArgs::parse();
 
     if args.verbose == 2 {
@@ -101,6 +114,10 @@ async fn main() -> Result<()> {
 
     // Stores amount of received bytes together with a timestamp for every peer.
     let mut received_bytes: HashMap<wireguard_keys::Pubkey, (usize, Instant)> = HashMap::new();
+
+    let consul_session = consul_client
+        .create_session(own_public_key, args.consul_ttl, token.clone())
+        .await?;
 
     // Enter main loop which periodically checks for updates to the list of WireGuard peers.
     loop {
@@ -205,8 +222,12 @@ async fn main() -> Result<()> {
             info!("Wrote own WireGuard peer config to Consul");
         }
 
+        // Wait until we've either been told to shut down or until we've slept for the update
+        // period.
+        //
+        // TODO: Use long polling instead of periodic checks.
         tokio::select! {
-            _ = tokio::signal::ctrl_c() => {
+            _ = token.cancelled() => {
                 info!("Received SIGINT, shutting down");
                 break;
             },
@@ -214,12 +235,12 @@ async fn main() -> Result<()> {
         };
     }
 
-    // Delete our own peer on shutdown. If we don't do this then it might take up to
-    // `--peer-timeout` amount of time until a new node with the same public IP can join the mesh.
-    consul_client
-        .delete_config(own_public_key)
+    // Wait for the Consul session handler to destroy our session and exit. It was cancelled by the
+    // same `CancellationToken` that cancelled us.
+    consul_session
+        .join_handle
         .await
-        .context("Couldn't delete self from Consul")?;
+        .context("Failed to join Consul session handler task")?;
 
     Ok(())
 }

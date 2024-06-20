@@ -448,6 +448,8 @@ async fn deletes_peer_on_timeout(
     let consul = consul.await;
     let mut peers: Vec<(WiresmithContainer, WgPeer)> = vec![];
     let args = &[
+        "--consul-ttl",
+        "10s",
         "--peer-timeout",
         "10s",
         "--keepalive",
@@ -553,7 +555,7 @@ async fn deletes_peer_on_timeout(
             )
         });
 
-    // Wait for a little more than the duration `peer_timeout` to trigger the timeout.
+    // Wait for a little more than the duration `consul-ttl` to trigger the timeout.
     sleep(Duration::from_secs(20)).await;
 
     let expected_peers = HashSet::from_iter(remaining_peers.into_iter().map(|peer| peer.1.clone()));
