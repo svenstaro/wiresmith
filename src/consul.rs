@@ -2,6 +2,7 @@ use std::{collections::HashSet, future::Future, time::Duration};
 
 use anyhow::{anyhow, bail, Context, Result};
 use base64::prelude::{Engine as _, BASE64_STANDARD};
+use futures::future::join_all;
 use reqwest::{
     header::{HeaderMap, HeaderName, HeaderValue},
     StatusCode, Url,
@@ -38,7 +39,6 @@ pub struct ConsulClient {
     pub http_client: reqwest::Client,
     api_base_url: Url,
     pub kv_api_base_url: Url,
-    pub datacenter: Option<String>,
 }
 
 #[derive(Debug, Eq, PartialEq, Hash, Deserialize)]
@@ -110,7 +110,6 @@ impl ConsulClient {
         consul_address: Url,
         consul_prefix: &str,
         consul_token: Option<&str>,
-        consul_datacenter: Option<String>,
     ) -> Result<ConsulClient> {
         // Make sure the consul prefix ends with a /.
         let consul_prefix = if consul_prefix.ends_with('/') {
@@ -141,19 +140,37 @@ impl ConsulClient {
             http_client: client,
             api_base_url: consul_address,
             kv_api_base_url,
-            datacenter: consul_datacenter,
         })
     }
 
     /// Read out all configs.
     #[tracing::instrument(skip(self))]
     pub async fn get_peers(&self) -> Result<HashSet<WgPeer>> {
-        let mut peers_url = self.kv_api_base_url.join("peers/")?;
-        peers_url.query_pairs_mut().append_pair("recurse", "true");
+        let dcs = self
+            .http_client
+            .get(self.api_base_url.join("v1/catalog/datacenters")?)
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<Vec<String>>()
+            .await?;
 
-        if let Some(dc) = &self.datacenter {
-            peers_url.query_pairs_mut().append_pair("dc", dc);
+        let mut peers = HashSet::new();
+        for dc_peers in join_all(dcs.iter().map(|dc| self.get_peers_for_dc(dc))).await {
+            let dc_peers = dc_peers?;
+            peers.extend(dc_peers);
         }
+
+        Ok(peers)
+    }
+
+    #[tracing::instrument(skip(self))]
+    async fn get_peers_for_dc(&self, dc: &str) -> Result<HashSet<WgPeer>> {
+        let mut peers_url = self.kv_api_base_url.join("peers/")?;
+        peers_url
+            .query_pairs_mut()
+            .append_pair("recurse", "true")
+            .append_pair("dc", dc);
 
         let resp = self
             .http_client

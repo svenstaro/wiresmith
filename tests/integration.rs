@@ -375,7 +375,7 @@ async fn join_network_federated_cluster(
         consul_dc1.http_port,
         // This Wiresmith instance is already implicitly connected to dc1. We're just making this
         // explicit here.
-        &["--update-period", "1s", "--consul-datacenter", "dc1"],
+        &["--update-period", "1s"],
         &tmpdir_a,
     )
     .await;
@@ -395,7 +395,7 @@ async fn join_network_federated_cluster(
         // This Wiresmith instance is connected to the Consul in dc2. However, we'll make it use
         // the Consul KV in dc1 so that we have a consistent view of peers as Consul doesn't
         // replicate its KV to federated clusters.
-        &["--update-period", "1s", "--consul-datacenter", "dc1"],
+        &["--update-period", "1s"],
         &tmpdir_b,
     )
     .await;
@@ -428,9 +428,9 @@ async fn join_network_federated_cluster(
     let consul_peers_dc1 = consul_dc1.client.get_peers().await?;
     assert_eq!(consul_peers_dc1, expected_peers);
 
-    // dc2 should have no peers as we were using only dc1.
+    // dc2 should have the same peers as we do in dc1.
     let consul_peers_dc2 = consul_dc2.client.get_peers().await?;
-    assert!(consul_peers_dc2.is_empty());
+    assert_eq!(consul_peers_dc2, consul_peers_dc1);
 
     Ok(())
 }

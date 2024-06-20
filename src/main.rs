@@ -52,7 +52,6 @@ async fn main() -> Result<()> {
         args.consul_address,
         &args.consul_prefix,
         args.consul_token.as_deref(),
-        args.consul_datacenter,
     )?;
 
     let endpoint_address = if let Some(endpoint_address) = args.endpoint_address {

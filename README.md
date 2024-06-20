@@ -41,13 +41,6 @@ The endpoint interface needs to be reachable from all the other peers.
 
 By default, peers that we haven't received a handshake from within 10 minutes are removed.
 
-If you use [Consul
-Federation](https://developer.hashicorp.com/consul/tutorials/networking/federation-gossip-wan), be
-aware that Consul KV keys aren't automatically replicated amongst datacenters. In this case, it is
-recommended to select a datacenter to be the single source of truth for Wiresmith. You can use the
-`--consul-datacenter` flag in that case to make sure that the same datacenter is always selected
-regardless of where the request is coming from.
-
 ## Usage
 
     Auto-config WireGuard clients into a mesh
@@ -72,9 +65,6 @@ regardless of where the request is coming from.
               Consul KV prefix
 
               [default: wiresmith]
-
-          --consul-datacenter <CONSUL_DATACENTER>
-              Consul datacenter
 
       -u, --update-period <UPDATE_PERIOD>
               Update period - how often to check for peer updates
