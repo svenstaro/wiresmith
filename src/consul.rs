@@ -143,7 +143,10 @@ impl ConsulClient {
         })
     }
 
-    /// Read out all configs.
+    /// # Read all peer configs
+    ///
+    /// This reads the WireGuard peer configs from all available Consul DCs and merges the sets
+    /// together.
     #[tracing::instrument(skip(self))]
     pub async fn get_peers(&self) -> Result<HashSet<WgPeer>> {
         let dcs = self
@@ -164,6 +167,10 @@ impl ConsulClient {
         Ok(peers)
     }
 
+    /// # Read peers for a single DC
+    ///
+    /// This will read the all of the WireGuard peers from a given Consul DC. This should only be
+    /// called by [`Self::get_peers`].
     #[tracing::instrument(skip(self))]
     async fn get_peers_for_dc(&self, dc: &str) -> Result<HashSet<WgPeer>> {
         let mut peers_url = self.kv_api_base_url.join("peers/")?;
@@ -267,22 +274,22 @@ fn session_handler(
     client: ConsulClient,
     session_token: CancellationToken,
     parent_token: CancellationToken,
-    id: Uuid,
+    session_id: Uuid,
     ttl: Duration,
 ) -> Result<impl Future<Output = ()> + Send> {
     // We construct the URLs first so we can return an error before the task is even spawned.
-    let id = id.to_string();
+    let session_id = session_id.to_string();
     let renewal_url = client
         .api_base_url
         .join("v1/session/renew/")
         .context("failed to build session renewal URL")?
-        .join(&id)
+        .join(&session_id)
         .context("failed to build session renewal URL")?;
     let destroy_url = client
         .api_base_url
         .join("v1/session/destroy/")
         .context("failed to build session destroy URL")?
-        .join(&id)
+        .join(&session_id)
         .context("failed to build session destroy URL")?;
 
     Ok(async move {
@@ -327,6 +334,26 @@ fn session_handler(
     })
 }
 
+/// # An active Consul session
+///
+/// Sessions are a mechanism provided by Consul to allow for implementing distributed locks and
+/// TTL'd keys in the Consul key/value store.
+///
+/// When a session is created you specify a TTL that the session is valid for unless it's renewed.
+/// The session ID can then be used to acquire locks in the key/value store that belongs to that
+/// session. If the session is either explicitly invalidated or is not renewed within the given TTL
+/// the lock is invalidated and depending on the how the session was created the keys for which
+/// locks are held are deleted.
+///
+/// [`ConsulClient::create_session`] creates a session with a given TTL, using the deletion
+/// invalidation behavior, and accepts a parent [`CancellationToken`] which will be cancelled if
+/// the session is invalidated.
+///
+/// This struct represents a Consul session which is actively being renewed by a spawned background
+/// task. If renewing the session fails for any reason (either because the session was invalidated
+/// by some other mechanism or because we can no longer access the Consul API) the background task
+/// cancels the [`CancellationToken`] that it was passed in to prevent any further work from being
+/// done with the session no longer being valid.
 pub struct ConsulSession {
     client: ConsulClient,
     id: Uuid,
@@ -334,16 +361,20 @@ pub struct ConsulSession {
 }
 
 impl ConsulSession {
+    /// # Cancel the session
+    ///
+    /// This will cause the background task maintaining the session to exit its loop and invalidate
+    /// the session, thus invalidating all locks belonging to it.
     #[tracing::instrument(skip(self))]
     pub async fn cancel(self) -> Result<(), JoinError> {
+        // The background task being cancelled here is defined in `session_handler`.
         self.cancellator.cancel().await
     }
 
-    /// Add own config.
+    /// # Add own WireGuard peer config
     ///
     /// This locks the key with this session's ID to ensure that the key is deleted if the session
-    /// is invalidated, either because we destroyed the session ourselves, or because we didn't
-    /// renew the session within the TTL and it expired.
+    /// is invalidated.
     #[tracing::instrument(skip(self, wgpeer))]
     pub async fn put_config(
         &self,
@@ -397,6 +428,13 @@ impl ConsulSession {
     }
 }
 
+/// # Ensure that a given WireGuard peer config exists
+///
+/// The `index` parameter is used to store the Consul index which is used to allow for blocking
+/// reads. Consul will only respond to the request if the current index is different from the
+/// passed in one, or the request timed out. Users are expected to pass in a mutable reference to a
+/// value that defaults to `None`, and pass in references to the same value whenever the function
+/// is called with the same URL.
 async fn ensure_config_exists(
     client: &ConsulClient,
     peer_url: Url,

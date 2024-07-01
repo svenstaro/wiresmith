@@ -17,7 +17,7 @@ can also clean up dead peers if desired.
 - Automatic address allocation
 - Mesh connectivity
 - IPv4/IPv6
-- Value store backends: Consul (with datacenter selection for federated clusters)
+- Value store backends: Consul
 - Network configuration backends: systemd-networkd
 - Cleanup of dead peers
 - Pretty logging!
@@ -39,7 +39,10 @@ This will:
 
 The endpoint interface needs to be reachable from all the other peers.
 
-By default, peers that we haven't received a handshake from within 10 minutes are removed.
+If you use [Consul
+Federation](https://developer.hashicorp.com/consul/tutorials/networking/federation-gossip-wan)
+we fetch peers from all available datacenters using the same `--consul-prefix`
+value.
 
 ## Usage
 
