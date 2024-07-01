@@ -1,23 +1,29 @@
 mod args;
 
-use std::{
-    collections::{HashMap, HashSet},
-    time::{Duration, Instant},
-};
+use std::collections::HashSet;
 
 use anyhow::{ensure, Context, Result};
 use clap::Parser;
 use tokio::time::sleep;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, trace};
 
-use wiresmith::{
-    consul::ConsulClient,
-    networkd::NetworkdConfiguration,
-    wireguard::{latest_transfer_rx, WgPeer},
-};
+use wiresmith::{consul::ConsulClient, networkd::NetworkdConfiguration, wireguard::WgPeer};
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Spawn a task to cancel us if we receive a SIGINT.
+    let token = CancellationToken::new();
+    tokio::spawn({
+        let token = token.clone();
+        async move {
+            tokio::signal::ctrl_c()
+                .await
+                .expect("failed to listen for SIGINT");
+            token.cancel();
+        }
+    });
+
     let args = args::CliArgs::parse();
 
     if args.verbose == 2 {
@@ -46,7 +52,6 @@ async fn main() -> Result<()> {
         args.consul_address,
         &args.consul_prefix,
         args.consul_token.as_deref(),
-        args.consul_datacenter,
     )?;
 
     let endpoint_address = if let Some(endpoint_address) = args.endpoint_address {
@@ -73,11 +78,11 @@ async fn main() -> Result<()> {
     }
 
     // Check whether we can find and parse an existing config.
-    let own_public_key = if let Ok(config) =
+    let networkd_config = if let Ok(config) =
         NetworkdConfiguration::from_config(&args.networkd_dir, &args.wg_interface).await
     {
         info!("Successfully loading existing systemd-networkd config");
-        config.public_key
+        config
     } else {
         info!("No existing WireGuard configuration found on system, creating a new one");
 
@@ -93,45 +98,31 @@ async fn main() -> Result<()> {
             .write_config(&args.networkd_dir, args.keepalive)
             .await?;
         info!("Our new config is:\n{:#?}", networkd_config);
-        networkd_config.public_key
+        networkd_config
     };
 
     info!("Restarting systemd-networkd");
     NetworkdConfiguration::restart().await?;
 
-    // Stores amount of received bytes together with a timestamp for every peer.
-    let mut received_bytes: HashMap<wireguard_keys::Pubkey, (usize, Instant)> = HashMap::new();
+    let consul_session = consul_client
+        .create_session(networkd_config.public_key, args.consul_ttl, token.clone())
+        .await?;
+
+    let own_wg_peer = WgPeer::new(
+        networkd_config.public_key,
+        &format!("{endpoint_address}:{}", args.wg_port),
+        networkd_config.wg_address.addr(),
+    );
+
+    info!("Submitting own WireGuard peer config:\n{:#?}", own_wg_peer);
+    let config_checker = consul_session
+        .put_config(own_wg_peer, token.clone())
+        .await
+        .context("Failed to put own peer config into Consul")?;
+    info!("Wrote own WireGuard peer config to Consul");
 
     // Enter main loop which periodically checks for updates to the list of WireGuard peers.
     loop {
-        if args.peer_timeout > Duration::ZERO {
-            // Fetch latest received bytes from peers. If new bytes were received, update the
-            // hashmap entry. Delete the peer if no new bytes were received for duration
-            // `peer_timeout`.
-            let transfer_rates = latest_transfer_rx(&args.wg_interface)
-                .await
-                .context("Couldn't get list of transfer rates from WireGuard")?;
-            for (pubkey, bytes) in transfer_rates {
-                let (old_bytes, timestamp) = received_bytes
-                    .entry(pubkey)
-                    .or_insert((bytes, Instant::now()));
-                if timestamp.elapsed() > args.peer_timeout && bytes.eq(old_bytes) {
-                    info!(
-                        "Peer {} has exceeded timeout of {:?}, deleting",
-                        pubkey.to_base64_urlsafe(),
-                        args.peer_timeout
-                    );
-                    consul_client
-                        .delete_config(pubkey)
-                        .await
-                        .context("Couldn't delete peer from Consul")?;
-                } else if !bytes.eq(old_bytes) {
-                    *old_bytes = bytes;
-                    *timestamp = Instant::now();
-                }
-            }
-        }
-
         trace!("Checking Consul for peer updates");
         let peers = consul_client
             .get_peers()
@@ -179,34 +170,12 @@ async fn main() -> Result<()> {
                 .context("Error restarting systemd-networkd")?;
         }
 
-        // Add our own peer config to Consul. It could be lacking for two reasons:
-        // 1. Either this is the first run and we were not added to Consul yet.
-        // 2. We were removed due to a timeout (temporary network outage) and have to re-add
-        //    ourselves.
-        let own_peer_is_in_consul = peers
-            .iter()
-            .any(|x| x.public_key == networkd_config.public_key);
-
-        if !own_peer_is_in_consul {
-            info!("Existing WireGuard peer config doesn't yet exist in Consul");
-
-            // Send the config to Consul.
-            let wg_peer = WgPeer::new(
-                networkd_config.public_key,
-                &format!("{endpoint_address}:{}", args.wg_port),
-                networkd_config.wg_address.addr(),
-            );
-            info!("Submitted own WireGuard peer config:\n{:#?}", wg_peer);
-
-            consul_client
-                .put_config(wg_peer)
-                .await
-                .context("Failed to put peer config into Consul")?;
-            info!("Wrote own WireGuard peer config to Consul");
-        }
-
+        // Wait until we've either been told to shut down or until we've slept for the update
+        // period.
+        //
+        // TODO: Use long polling instead of periodic checks.
         tokio::select! {
-            _ = tokio::signal::ctrl_c() => {
+            _ = token.cancelled() => {
                 info!("Received SIGINT, shutting down");
                 break;
             },
@@ -214,12 +183,19 @@ async fn main() -> Result<()> {
         };
     }
 
-    // Delete our own peer on shutdown. If we don't do this then it might take up to
-    // `--peer-timeout` amount of time until a new node with the same public IP can join the mesh.
-    consul_client
-        .delete_config(own_public_key)
+    // Cancel the config checker first so we don't get spurious errors if the session is destroyed
+    // first.
+    config_checker
+        .cancel()
         .await
-        .context("Couldn't delete self from Consul")?;
+        .context("Failed to join Consul config checker task")?;
+
+    // Wait for the Consul session handler to destroy our session and exit. It was cancelled by the
+    // same `CancellationToken` that cancelled us.
+    consul_session
+        .cancel()
+        .await
+        .context("Failed to join Consul session handler task")?;
 
     Ok(())
 }

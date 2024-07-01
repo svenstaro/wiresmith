@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased] - ReleaseDate
 - Remove self from the Consul state when wiresmith shuts down [#200](https://github.com/svenstaro/wiresmith/pull/200) (thanks @kyrias)
+- Breaking: Rework Consul integration to use sessions and work across datacenters. This is a breaking change for setups that connect a mesh across Consul datacenters. [#207](https://github.com/svenstaro/wiresmith/pull/207)
 
 ## [0.3.0] - 2024-04-12
 - Use latest data transmission date instead of latest handshake for timeouts [#17](https://github.com/svenstaro/wiresmith/pull/17) (thanks @tomgroenwoldt)
