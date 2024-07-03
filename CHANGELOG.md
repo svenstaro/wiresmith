@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+
+## [0.4.0] - 2024-07-03
 - Remove self from the Consul state when wiresmith shuts down [#200](https://github.com/svenstaro/wiresmith/pull/200) (thanks @kyrias)
 - Breaking: Rework Consul integration to use sessions and work across datacenters. This is a breaking change for setups that connect a mesh across Consul datacenters. [#207](https://github.com/svenstaro/wiresmith/pull/207)
 
@@ -31,7 +33,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - Initial release
 
 <!-- next-url -->
-[Unreleased]: https://github.com/svenstaro/wiresmith/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/svenstaro/wiresmith/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/svenstaro/wiresmith/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/svenstaro/wiresmith/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/svenstaro/wiresmith/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/svenstaro/wiresmith/compare/v0.1.2...v0.2.0
