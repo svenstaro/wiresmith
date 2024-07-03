@@ -329,7 +329,7 @@ fn session_handler(
             .await
             .and_then(|res| res.error_for_status());
         if let Err(err) = res {
-            warn!("Destraying Consul session failed: {err}");
+            warn!("Destroying Consul session failed: {err}");
         }
     })
 }
