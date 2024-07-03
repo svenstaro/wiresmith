@@ -173,11 +173,16 @@ impl ConsulClient {
     /// called by [`Self::get_peers`].
     #[tracing::instrument(skip(self))]
     async fn get_peers_for_dc(&self, dc: &str) -> Result<HashSet<WgPeer>> {
+        // When the Consul server which is the Raft leader is restarted all KV reads by default
+        // return 500 errors until a new Raft leader is elected. For our usecase it's fine if the
+        // read value is a bit stale though, so prevent spurious errors by always performing stale
+        // reads.
         let mut peers_url = self.kv_api_base_url.join("peers/")?;
         peers_url
             .query_pairs_mut()
             .append_pair("recurse", "true")
-            .append_pair("dc", dc);
+            .append_pair("dc", dc)
+            .append_pair("stale", "1");
 
         let resp = self
             .http_client
