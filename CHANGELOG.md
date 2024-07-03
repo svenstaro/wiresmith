@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+
+## [0.4.1] - 2024-07-03
 - More gracefully handle Consul errors which are more likely to occurr since 0.4.0 [#209](https://github.com/svenstaro/wiresmith/pull/209)
 
 ## [0.4.0] - 2024-07-03
@@ -34,7 +36,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - Initial release
 
 <!-- next-url -->
-[Unreleased]: https://github.com/svenstaro/wiresmith/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/svenstaro/wiresmith/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/svenstaro/wiresmith/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/svenstaro/wiresmith/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/svenstaro/wiresmith/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/svenstaro/wiresmith/compare/v0.2.0...v0.2.1
