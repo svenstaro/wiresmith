@@ -17,7 +17,7 @@ can also clean up dead peers if desired.
 - Automatic address allocation
 - Mesh connectivity
 - IPv4/IPv6
-- Value store backends: Consul (with datacenter selection for federated clusters)
+- Value store backends: Consul
 - Network configuration backends: systemd-networkd
 - Cleanup of dead peers
 - Pretty logging!
@@ -39,14 +39,10 @@ This will:
 
 The endpoint interface needs to be reachable from all the other peers.
 
-By default, peers that we haven't received a handshake from within 10 minutes are removed.
-
 If you use [Consul
-Federation](https://developer.hashicorp.com/consul/tutorials/networking/federation-gossip-wan), be
-aware that Consul KV keys aren't automatically replicated amongst datacenters. In this case, it is
-recommended to select a datacenter to be the single source of truth for Wiresmith. You can use the
-`--consul-datacenter` flag in that case to make sure that the same datacenter is always selected
-regardless of where the request is coming from.
+Federation](https://developer.hashicorp.com/consul/tutorials/networking/federation-gossip-wan)
+we fetch peers from all available datacenters using the same `--consul-prefix`
+value.
 
 ## Usage
 
@@ -63,13 +59,15 @@ regardless of where the request is coming from.
           --consul-token <CONSUL_TOKEN>
               Consul secret token
 
+          --consul-ttl <CONSUL_TTL>
+              Consul TTL times out after this duration without being renewed
+
+              [default: 1min]
+
           --consul-prefix <CONSUL_PREFIX>
               Consul KV prefix
 
               [default: wiresmith]
-
-          --consul-datacenter <CONSUL_DATACENTER>
-              Consul datacenter
 
       -u, --update-period <UPDATE_PERIOD>
               Update period - how often to check for peer updates
@@ -85,13 +83,6 @@ regardless of where the request is coming from.
               WireGuard UDP listen port
 
               [default: 51820]
-
-      -t, --peer-timeout <PEER_TIMEOUT>
-              Remove disconnected peers after this duration
-
-              Set to 0 in order to disable.
-
-              [default: 10min]
 
       -k, --keepalive <KEEPALIVE>
               Set persistent keepalive option for wireguard

@@ -61,7 +61,6 @@ impl ConsulContainer {
             format!("http://localhost:{port}").parse().unwrap(),
             "wiresmith",
             None,
-            None,
         )
         .unwrap();
         Self {

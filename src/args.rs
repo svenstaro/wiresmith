@@ -22,13 +22,13 @@ pub struct CliArgs {
     #[arg(long)]
     pub consul_token: Option<String>,
 
+    /// Consul TTL times out after this duration without being renewed
+    #[arg(long, default_value = "1min", value_parser = humantime::parse_duration)]
+    pub consul_ttl: Duration,
+
     /// Consul KV prefix
     #[arg(long, default_value = "wiresmith")]
     pub consul_prefix: String,
-
-    /// Consul datacenter
-    #[arg(long)]
-    pub consul_datacenter: Option<String>,
 
     /// Update period - how often to check for peer updates
     #[arg(short, long, default_value = "10s", value_parser = humantime::parse_duration)]
@@ -41,12 +41,6 @@ pub struct CliArgs {
     /// WireGuard UDP listen port
     #[arg(short = 'p', long, default_value = "51820")]
     pub wg_port: u16,
-
-    /// Remove disconnected peers after this duration
-    ///
-    /// Set to 0 in order to disable.
-    #[arg(short = 't', long, default_value = "10min", value_parser = humantime::parse_duration)]
-    pub peer_timeout: Duration,
 
     /// Set persistent keepalive option for wireguard
     ///
