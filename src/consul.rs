@@ -173,11 +173,16 @@ impl ConsulClient {
     /// called by [`Self::get_peers`].
     #[tracing::instrument(skip(self))]
     async fn get_peers_for_dc(&self, dc: &str) -> Result<HashSet<WgPeer>> {
+        // When the Consul server which is the Raft leader is restarted all KV reads by default
+        // return 500 errors until a new Raft leader is elected. For our usecase it's fine if the
+        // read value is a bit stale though, so prevent spurious errors by always performing stale
+        // reads.
         let mut peers_url = self.kv_api_base_url.join("peers/")?;
         peers_url
             .query_pairs_mut()
             .append_pair("recurse", "true")
-            .append_pair("dc", dc);
+            .append_pair("dc", dc)
+            .append_pair("stale", "1");
 
         let resp = self
             .http_client
@@ -329,7 +334,7 @@ fn session_handler(
             .await
             .and_then(|res| res.error_for_status());
         if let Err(err) = res {
-            warn!("Destraying Consul session failed: {err}");
+            warn!("Destroying Consul session failed: {err}");
         }
     })
 }
@@ -375,6 +380,9 @@ impl ConsulSession {
     ///
     /// This locks the key with this session's ID to ensure that the key is deleted if the session
     /// is invalidated.
+    ///
+    /// A background task is spawned that ensures that the key continues existing. If it cannot be
+    /// fetched the parent [`CancellationToken`] is cancelled.
     #[tracing::instrument(skip(self, wgpeer))]
     pub async fn put_config(
         &self,
@@ -404,27 +412,48 @@ impl ConsulSession {
 
         let client = self.client.clone();
         let config_token = CancellationToken::new();
-        let join_handle = tokio::spawn({
-            let config_token = config_token.clone();
-            async move {
-                let mut index = None;
-                loop {
-                    let res = tokio::select! {
-                        _ = config_token.cancelled() => break,
-                        res = ensure_config_exists(&client, peer_url.clone(), &mut index) => res,
-                    };
-                    if let Err(err) = res {
-                        error!("Could not get own node config from Consul, cancelling: {err}");
-                        parent_token.cancel();
-                    }
-                }
-            }
-        });
+        let join_handle = tokio::spawn(config_handler(
+            client,
+            peer_url,
+            config_token.clone(),
+            parent_token,
+        ));
 
         Ok(TaskCancellator {
             join_handle,
             token: config_token,
         })
+    }
+}
+
+/// # Background task ensuring own config key exists
+///
+/// Makes sure that the config key we created still exists by long polling. If getting it fails for
+/// whatever reason we trigger the parent [`CancellationToken`] to shut down since we can no longer
+/// be sure that we have a valid locked session.
+async fn config_handler(
+    client: ConsulClient,
+    mut peer_url: Url,
+    config_token: CancellationToken,
+    parent_token: CancellationToken,
+) {
+    // Perform stale reads when checking for our config.
+    //
+    // When the Consul server which is the Raft leader is restarted all KV reads by default return
+    // 500 errors until a new Raft leader is elected. For our usecase it's fine if the read value
+    // is a bit stale though.
+    peer_url.query_pairs_mut().append_pair("stale", "1");
+
+    let mut index = None;
+    loop {
+        let res = tokio::select! {
+            _ = config_token.cancelled() => break,
+            res = ensure_config_exists(&client, peer_url.clone(), &mut index) => res,
+        };
+        if let Err(err) = res {
+            error!("Could not get own node config from Consul, cancelling: {err}");
+            parent_token.cancel();
+        }
     }
 }
 

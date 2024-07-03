@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+- More gracefully handle Consul errors which are more likely to occurr since 0.4.0 [#209](https://github.com/svenstaro/wiresmith/pull/209)
 
 ## [0.4.0] - 2024-07-03
 - Remove self from the Consul state when wiresmith shuts down [#200](https://github.com/svenstaro/wiresmith/pull/200) (thanks @kyrias)

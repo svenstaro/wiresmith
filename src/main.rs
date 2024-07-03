@@ -3,19 +3,20 @@ mod args;
 use std::collections::HashSet;
 
 use anyhow::{ensure, Context, Result};
+use args::CliArgs;
 use clap::Parser;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, trace};
+use tracing::{debug, error, info, trace};
 
 use wiresmith::{consul::ConsulClient, networkd::NetworkdConfiguration, wireguard::WgPeer};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     // Spawn a task to cancel us if we receive a SIGINT.
-    let token = CancellationToken::new();
+    let top_level_token = CancellationToken::new();
     tokio::spawn({
-        let token = token.clone();
+        let token = top_level_token.clone();
         async move {
             tokio::signal::ctrl_c()
                 .await
@@ -49,14 +50,14 @@ async fn main() -> Result<()> {
     }
 
     let consul_client = ConsulClient::new(
-        args.consul_address,
+        args.consul_address.clone(),
         &args.consul_prefix,
         args.consul_token.as_deref(),
     )?;
 
-    let endpoint_address = if let Some(endpoint_address) = args.endpoint_address {
-        endpoint_address
-    } else if let Some(endpoint_interface) = args.endpoint_interface {
+    let endpoint_address = if let Some(endpoint_address) = &args.endpoint_address {
+        endpoint_address.clone()
+    } else if let Some(endpoint_interface) = &args.endpoint_interface {
         // Find suitable IP on provided interface.
         endpoint_interface
             .ips
@@ -104,6 +105,29 @@ async fn main() -> Result<()> {
     info!("Restarting systemd-networkd");
     NetworkdConfiguration::restart().await?;
 
+    loop {
+        if let Err(err) = inner_loop(
+            &consul_client,
+            &endpoint_address,
+            &networkd_config,
+            &args,
+            top_level_token.child_token(),
+        )
+        .await
+        {
+            error!("Inner loop exited with an error: {err:?}");
+        }
+    }
+}
+
+async fn inner_loop(
+    consul_client: &ConsulClient,
+    endpoint_address: &str,
+    networkd_config: &NetworkdConfiguration,
+    args: &CliArgs,
+    token: CancellationToken,
+) -> Result<()> {
+    // Create a Consul session to hold the config KV lock under.
     let consul_session = consul_client
         .create_session(networkd_config.public_key, args.consul_ttl, token.clone())
         .await?;
@@ -114,7 +138,10 @@ async fn main() -> Result<()> {
         networkd_config.wg_address.addr(),
     );
 
-    info!("Submitting own WireGuard peer config:\n{:#?}", own_wg_peer);
+    info!(
+        "Submitting own WireGuard peer config to Consul:\n{:#?}",
+        own_wg_peer
+    );
     let config_checker = consul_session
         .put_config(own_wg_peer, token.clone())
         .await
