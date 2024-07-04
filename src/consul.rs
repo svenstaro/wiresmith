@@ -379,7 +379,7 @@ impl ConsulSession {
     #[tracing::instrument(skip(self, wgpeer))]
     pub async fn put_config(
         &self,
-        wgpeer: WgPeer,
+        wgpeer: &WgPeer,
         parent_token: CancellationToken,
     ) -> Result<TaskCancellator> {
         let peer_url = self
@@ -393,14 +393,24 @@ impl ConsulSession {
             .query_pairs_mut()
             .append_pair("acquire", &self.id.to_string());
 
-        self.client
+        // KV PUT requests return a boolean saying whether the upsert attempt was successful. If
+        // another session already holds the lock this request will fail.
+        let got_lock = self
+            .client
             .http_client
             .put(put_url)
-            .json(&wgpeer)
+            .json(wgpeer)
             .send()
             .await?
             .error_for_status()
-            .context("failed to put node config into Consul")?;
+            .context("failed to put node config into Consul")?
+            .json::<bool>()
+            .await
+            .context("Failed to parse Consul KV put response")?;
+        if !got_lock {
+            bail!("Did not get Consul lock for node config");
+        }
+
         info!("Wrote node config into Consul");
 
         let client = self.client.clone();
