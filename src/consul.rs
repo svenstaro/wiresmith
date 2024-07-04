@@ -315,7 +315,7 @@ fn session_handler(
                 .await
                 .and_then(|res| res.error_for_status());
             if let Err(err) = res {
-                error!("Renewing Consul session failed, aborting: {err}");
+                error!("Renewing Consul session failed, aborting: {err:?}");
                 parent_token.cancel();
                 return;
             }
@@ -329,7 +329,7 @@ fn session_handler(
             .await
             .and_then(|res| res.error_for_status());
         if let Err(err) = res {
-            warn!("Destroying Consul session failed: {err}");
+            warn!("Destroying Consul session failed: {err:?}");
         }
     })
 }
