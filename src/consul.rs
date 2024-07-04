@@ -17,7 +17,7 @@ use tracing::{error, info, trace, warn};
 use uuid::Uuid;
 use wireguard_keys::Pubkey;
 
-use crate::wireguard::WgPeer;
+use crate::{wireguard::WgPeer, CONSUL_TTL};
 
 /// Allows for gracefully telling a background task to shut down and to then join it.
 #[must_use]
@@ -224,7 +224,6 @@ impl ConsulClient {
     pub async fn create_session(
         &self,
         public_key: Pubkey,
-        ttl: Duration,
         parent_token: CancellationToken,
     ) -> Result<ConsulSession> {
         let url = self.api_base_url.join("v1/session/create")?;
@@ -235,7 +234,7 @@ impl ConsulClient {
             .json(&CreateSession {
                 name: format!("wiresmith-{}", public_key.to_base64_urlsafe()),
                 behavior: SessionInvalidationBehavior::Delete,
-                ttl: ttl.try_into()?,
+                ttl: CONSUL_TTL.try_into()?,
             })
             .send()
             .await?
@@ -245,14 +244,8 @@ impl ConsulClient {
 
         let session_token = CancellationToken::new();
         let join_handle = tokio::spawn(
-            session_handler(
-                self.clone(),
-                session_token.clone(),
-                parent_token,
-                res.id,
-                ttl,
-            )
-            .context("failed to create Consul session handler")?,
+            session_handler(self.clone(), session_token.clone(), parent_token, res.id)
+                .context("failed to create Consul session handler")?,
         );
 
         Ok(ConsulSession {
@@ -268,8 +261,9 @@ impl ConsulClient {
 
 /// # Create a background task maintaining a Consul session
 ///
-/// This function returns a future which will renew the given Consul session according to the given
-/// session TTL. The returned future is expected to be spawned as a Tokio task.
+/// This function returns a future which will renew the given Consul session according to the
+/// hardcoded session TTL (currently 15 seconds). The returned future is expected to be spawned as
+/// a Tokio task.
 ///
 /// The future will continue maintaining the session until either the `session_token`
 /// [`CancellationToken`] is cancelled, in which case we will explicitly invalidate the session, or
@@ -280,7 +274,6 @@ fn session_handler(
     session_token: CancellationToken,
     parent_token: CancellationToken,
     session_id: Uuid,
-    ttl: Duration,
 ) -> Result<impl Future<Output = ()> + Send> {
     // We construct the URLs first so we can return an error before the task is even spawned.
     let session_id = session_id.to_string();
@@ -299,7 +292,7 @@ fn session_handler(
 
     Ok(async move {
         // Renew the session at 2 times the TTL.
-        let mut interval = interval(ttl / 2);
+        let mut interval = interval(CONSUL_TTL / 2);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         loop {

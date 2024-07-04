@@ -129,7 +129,7 @@ async fn inner_loop(
 ) -> Result<()> {
     // Create a Consul session to hold the config KV lock under.
     let consul_session = consul_client
-        .create_session(networkd_config.public_key, args.consul_ttl, token.clone())
+        .create_session(networkd_config.public_key, token.clone())
         .await?;
 
     let own_wg_peer = WgPeer::new(

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+- Delete `--consul-ttl` argument. The TTL decision affects core logic so it doesn't make much sense to adjust it.
 
 ## [0.4.1] - 2024-07-03
 - More gracefully handle Consul errors which are more likely to occurr since 0.4.0 [#209](https://github.com/svenstaro/wiresmith/pull/209)

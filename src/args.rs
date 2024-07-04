@@ -22,10 +22,6 @@ pub struct CliArgs {
     #[arg(long)]
     pub consul_token: Option<String>,
 
-    /// Consul TTL times out after this duration without being renewed
-    #[arg(long, default_value = "1min", value_parser = humantime::parse_duration)]
-    pub consul_ttl: Duration,
-
     /// Consul KV prefix
     #[arg(long, default_value = "wiresmith")]
     pub consul_prefix: String,

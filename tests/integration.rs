@@ -12,7 +12,7 @@ use rand::seq::SliceRandom;
 use rstest::rstest;
 use tokio::{process::Command, time::sleep};
 use wireguard_keys::Privkey;
-use wiresmith::{networkd::NetworkdConfiguration, wireguard::WgPeer};
+use wiresmith::{networkd::NetworkdConfiguration, wireguard::WgPeer, CONSUL_TTL};
 
 use crate::{utils::wait_for_files, utils::WiresmithContainer};
 
@@ -447,14 +447,7 @@ async fn deletes_peer_on_timeout(
 ) -> Result<()> {
     let consul = consul.await;
     let mut peers: Vec<(WiresmithContainer, WgPeer)> = vec![];
-    let args = &[
-        "--consul-ttl",
-        "10s",
-        "--keepalive",
-        "1s",
-        "--update-period",
-        "5s",
-    ];
+    let args = &["--keepalive", "1s", "--update-period", "5s"];
 
     let wiresmith_a = WiresmithContainer::new(
         "a",
@@ -553,8 +546,8 @@ async fn deletes_peer_on_timeout(
             )
         });
 
-    // Wait for a little more than the duration `consul-ttl` to trigger the timeout.
-    sleep(Duration::from_secs(20)).await;
+    // Wait for a little more than the Consul session `TTL + LockDelay` to trigger the timeout.
+    sleep((CONSUL_TTL * 2) + Duration::from_secs(5)).await;
 
     let expected_peers = HashSet::from_iter(remaining_peers.into_iter().map(|peer| peer.1.clone()));
 
