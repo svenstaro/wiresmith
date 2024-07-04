@@ -23,6 +23,7 @@ async fn main() -> Result<()> {
             tokio::signal::ctrl_c()
                 .await
                 .expect("failed to listen for SIGINT");
+            info!("Received SIGINT, triggering shutdown");
             token.cancel();
         }
     });
@@ -119,7 +120,16 @@ async fn main() -> Result<()> {
         {
             error!("Inner loop exited with an error: {err:?}");
         }
+
+        if top_level_token.is_cancelled() {
+            trace!("Top level task cancelled, exiting");
+            break;
+        } else {
+            info!("Restarting wiresmith main loop");
+        }
     }
+
+    Ok(())
 }
 
 async fn inner_loop(
