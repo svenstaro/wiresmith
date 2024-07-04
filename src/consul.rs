@@ -221,6 +221,7 @@ impl ConsulClient {
     /// the keys that locks are held for are deleted.
     ///
     /// See [`ConsulSession`] for more information.
+    #[tracing::instrument(skip(self, parent_token))]
     pub async fn create_session(
         &self,
         public_key: Pubkey,
@@ -378,7 +379,7 @@ impl ConsulSession {
     ///
     /// A background task is spawned that ensures that the key continues existing. If it cannot be
     /// fetched the parent [`CancellationToken`] is cancelled.
-    #[tracing::instrument(skip(self, wgpeer))]
+    #[tracing::instrument(skip(self, wgpeer, parent_token))]
     pub async fn put_config(
         &self,
         wgpeer: &WgPeer,
@@ -531,6 +532,7 @@ struct ReadKeyResponse {
 /// is called with the same URL.
 ///
 /// Returns the session ID that holds the config locked.
+#[tracing::instrument(skip(client))]
 async fn ensure_config_exists(
     client: &ConsulClient,
     peer_url: Url,

@@ -132,6 +132,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+#[tracing::instrument(skip_all)]
 async fn inner_loop(
     consul_client: &ConsulClient,
     endpoint_address: &str,
