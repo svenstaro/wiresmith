@@ -1,6 +1,6 @@
 mod args;
 
-use std::collections::HashSet;
+use std::{collections::HashSet, time::Duration};
 
 use anyhow::{bail, ensure, Context, Result};
 use args::CliArgs;
@@ -108,7 +108,23 @@ async fn main() -> Result<()> {
     info!("Restarting systemd-networkd");
     NetworkdConfiguration::restart().await?;
 
+    let mut interval = interval(Duration::from_secs(5));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
     loop {
+        // Wait a bit between each attempt at starting the main loop.
+        //
+        // If we don't have any kind of delay here we would be hammering the server with constant
+        // requests if e.g. the Consul leader goes down and until a new leader is elected, since
+        // creating a new session during that time fails with a 500 error.
+        tokio::select! {
+            _ = top_level_token.cancelled() => {
+                trace!("Top level task cancelled, exiting");
+                break;
+            },
+            _ = interval.tick() => {},
+        };
+
         if let Err(err) = inner_loop(
             &consul_client,
             &endpoint_address,
