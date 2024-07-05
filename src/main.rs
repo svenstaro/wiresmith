@@ -1,15 +1,17 @@
 mod args;
 
-use std::collections::HashSet;
+use std::{collections::HashSet, time::Duration};
 
-use anyhow::{ensure, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 use args::CliArgs;
 use clap::Parser;
-use tokio::time::sleep;
+use tokio::time::{interval, sleep};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace};
 
-use wiresmith::{consul::ConsulClient, networkd::NetworkdConfiguration, wireguard::WgPeer};
+use wiresmith::{
+    consul::ConsulClient, networkd::NetworkdConfiguration, wireguard::WgPeer, CONSUL_TTL,
+};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -21,6 +23,7 @@ async fn main() -> Result<()> {
             tokio::signal::ctrl_c()
                 .await
                 .expect("failed to listen for SIGINT");
+            info!("Received SIGINT, triggering shutdown");
             token.cancel();
         }
     });
@@ -105,7 +108,23 @@ async fn main() -> Result<()> {
     info!("Restarting systemd-networkd");
     NetworkdConfiguration::restart().await?;
 
+    let mut interval = interval(Duration::from_secs(5));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
     loop {
+        // Wait a bit between each attempt at starting the main loop.
+        //
+        // If we don't have any kind of delay here we would be hammering the server with constant
+        // requests if e.g. the Consul leader goes down and until a new leader is elected, since
+        // creating a new session during that time fails with a 500 error.
+        tokio::select! {
+            _ = top_level_token.cancelled() => {
+                trace!("Top level task cancelled, exiting");
+                break;
+            },
+            _ = interval.tick() => {},
+        };
+
         if let Err(err) = inner_loop(
             &consul_client,
             &endpoint_address,
@@ -117,9 +136,19 @@ async fn main() -> Result<()> {
         {
             error!("Inner loop exited with an error: {err:?}");
         }
+
+        if top_level_token.is_cancelled() {
+            trace!("Top level task cancelled, exiting");
+            break;
+        } else {
+            info!("Restarting wiresmith main loop");
+        }
     }
+
+    Ok(())
 }
 
+#[tracing::instrument(skip_all)]
 async fn inner_loop(
     consul_client: &ConsulClient,
     endpoint_address: &str,
@@ -129,7 +158,7 @@ async fn inner_loop(
 ) -> Result<()> {
     // Create a Consul session to hold the config KV lock under.
     let consul_session = consul_client
-        .create_session(networkd_config.public_key, args.consul_ttl, token.clone())
+        .create_session(networkd_config.public_key, token.clone())
         .await?;
 
     let own_wg_peer = WgPeer::new(
@@ -142,10 +171,35 @@ async fn inner_loop(
         "Submitting own WireGuard peer config to Consul:\n{:#?}",
         own_wg_peer
     );
-    let config_checker = consul_session
-        .put_config(own_wg_peer, token.clone())
-        .await
-        .context("Failed to put own peer config into Consul")?;
+
+    // Try to put our WireGuard peer config into Consul. On failures, which could have occurred due
+    // to a session not yet having timed out, we retry 5 times before failing fully.
+    let config_checker = 'cc: {
+        let mut failures = 0;
+
+        // We sleep for the TTL*2 between each attempt since after this amount of time any previously
+        // held session should have expired. This corresponds to one period of the TTL and one
+        // period of the default Consul session `LockDelay` which is also 15 seconds.
+        let mut interval = interval(CONSUL_TTL * 2);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+        loop {
+            interval.tick().await;
+
+            match consul_session.put_config(&own_wg_peer, token.clone()).await {
+                Ok(config_checker) => break 'cc config_checker,
+                Err(err) => {
+                    failures += 1;
+                    if failures >= 5 {
+                        bail!("Failed to put node config {failures} times, exiting inner loop");
+                    }
+                    error!(
+                        "Failed to put own node config into Consul ({failures} failed attempts): {err:?}"
+                    );
+                }
+            };
+        }
+    };
     info!("Wrote own WireGuard peer config to Consul");
 
     // Enter main loop which periodically checks for updates to the list of WireGuard peers.
@@ -203,7 +257,7 @@ async fn inner_loop(
         // TODO: Use long polling instead of periodic checks.
         tokio::select! {
             _ = token.cancelled() => {
-                info!("Received SIGINT, shutting down");
+                trace!("Main loop cancelled, exiting");
                 break;
             },
             _ = sleep(args.update_period) => continue,
@@ -212,6 +266,7 @@ async fn inner_loop(
 
     // Cancel the config checker first so we don't get spurious errors if the session is destroyed
     // first.
+    trace!("Cancelling config checker");
     config_checker
         .cancel()
         .await
@@ -219,6 +274,7 @@ async fn inner_loop(
 
     // Wait for the Consul session handler to destroy our session and exit. It was cancelled by the
     // same `CancellationToken` that cancelled us.
+    trace!("Cancelling session handler");
     consul_session
         .cancel()
         .await
