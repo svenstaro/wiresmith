@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+- Fix Consul lock session "leak" when the inner loop performed an early return [#212](https://github.com/svenstaro/wiresmith/pull/212)
 
 ## [0.4.2] - 2024-07-05
 - Delete `--consul-ttl` argument. The TTL decision affects core logic so it doesn't make much sense to adjust it.
