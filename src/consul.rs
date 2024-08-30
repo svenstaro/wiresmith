@@ -22,15 +22,40 @@ use crate::{wireguard::WgPeer, CONSUL_TTL};
 /// Allows for gracefully telling a background task to shut down and to then join it.
 #[must_use]
 pub struct TaskCancellator {
-    join_handle: JoinHandle<()>,
+    join_handle: Option<JoinHandle<()>>,
     token: CancellationToken,
 }
 
 impl TaskCancellator {
+    pub fn new(join_handle: JoinHandle<()>, token: CancellationToken) -> Self {
+        Self {
+            join_handle: Some(join_handle),
+            token,
+        }
+    }
+
     #[tracing::instrument(skip(self))]
-    pub async fn cancel(self) -> Result<(), JoinError> {
+    pub async fn cancel(mut self) -> Result<(), JoinError> {
+        // Tell the task to shut down.
         self.token.cancel();
-        self.join_handle.await
+
+        // Awaiting the join handle consumes the future and thereby moves it out of `Self`. It's
+        // not allowed to move out of types which implement `Drop` and so to work around this we
+        // wrap the future in `Option`.
+        if let Some(join_handle) = self.join_handle.take() {
+            return join_handle.await;
+        }
+        Ok(())
+    }
+}
+
+/// Ensure that the managed task shuts down if `Self` is dropped.
+///
+/// This ensures that we don't keep tasks running in the background if the main tasks's inner loop
+/// performs an early return.
+impl Drop for TaskCancellator {
+    fn drop(&mut self) {
+        self.token.cancel();
     }
 }
 
@@ -254,10 +279,7 @@ impl ConsulClient {
         Ok(ConsulSession {
             client: self.clone(),
             id: res.id,
-            cancellator: TaskCancellator {
-                join_handle,
-                token: session_token,
-            },
+            cancellator: TaskCancellator::new(join_handle, session_token),
         })
     }
 }
@@ -426,10 +448,7 @@ impl ConsulSession {
             parent_token,
         ));
 
-        Ok(TaskCancellator {
-            join_handle,
-            token: config_token,
-        })
+        Ok(TaskCancellator::new(join_handle, config_token))
     }
 }
 
