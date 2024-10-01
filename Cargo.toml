@@ -34,7 +34,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 wireguard-keys = "0.1"
 humantime = "2.1.0"
 uuid = { version = "1.10.0", features = ["serde"] }
-tokio-util = "0.7.11"
+tokio-util = "0.7.12"
 futures = "0.3.30"
 
 [dev-dependencies]
@@ -44,4 +44,4 @@ configparser = "3"
 port_check = "0.2"
 pretty_assertions = "1"
 rand = "0.8.5"
-rstest = "0.22"
+rstest = "0.23"
