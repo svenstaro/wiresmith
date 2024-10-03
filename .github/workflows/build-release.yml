@@ -95,24 +95,6 @@ jobs:
       - name: Install qemu-user-static
         run: sudo apt update && sudo apt install qemu-user-static
 
-      - name: Download artifact aarch64-unknown-linux-gnu
-        uses: actions/download-artifact@v4
-        with:
-          name: aarch64-unknown-linux-gnu
-          path: target/aarch64-unknown-linux-gnu/release
-
-      - name: Download artifact x86_64-unknown-linux-gnu
-        uses: actions/download-artifact@v4
-        with:
-          name: x86_64-unknown-linux-gnu
-          path: target/x86_64-unknown-linux-gnu/release
-
-      - name: Download artifact armv7-unknown-linux-gnueabihf
-        uses: actions/download-artifact@v4
-        with:
-          name: armv7-unknown-linux-gnueabihf
-          path: target/armv7-unknown-linux-gnueabihf/release
-
       - name: Download artifact aarch64-unknown-linux-musl
         uses: actions/download-artifact@v4
         with:
@@ -135,13 +117,13 @@ jobs:
         run: podman login --username ${{ github.actor }} --password ${{ secrets.GITHUB_TOKEN }} ghcr.io
 
       - name: podman build linux/arm64
-        run: podman build --format docker --platform linux/arm64/v8 --manifest wiresmith -f Containerfile target/aarch64-unknown-linux-gnu/release
+        run: podman build --format docker --platform linux/arm64/v8 --manifest wiresmith -f Containerfile target/aarch64-unknown-linux-musl/release
 
       - name: podman build linux/amd64
-        run: podman build --format docker --platform linux/amd64 --manifest wiresmith -f Containerfile target/x86_64-unknown-linux-gnu/release
+        run: podman build --format docker --platform linux/amd64 --manifest wiresmith -f Containerfile target/x86_64-unknown-linux-musl/release
 
       - name: podman build linux/arm
-        run: podman build --format docker --platform linux/arm/v7 --manifest wiresmith -f Containerfile target/armv7-unknown-linux-gnueabihf/release
+        run: podman build --format docker --platform linux/arm/v7 --manifest wiresmith -f Containerfile target/armv7-unknown-linux-musleabihf/release
 
       - name: podman manifest push latest
         run: podman manifest push wiresmith ghcr.io/svenstaro/wiresmith:latest
