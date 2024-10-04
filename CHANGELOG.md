@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+
+## [0.4.4] - 2024-10-04
 - Fix container images accidentally containing glibc rather than musl binaries [#215](https://github.com/svenstaro/wiresmith/issues/215)
 
 ## [0.4.3] - 2024-08-30
@@ -44,7 +46,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - Initial release
 
 <!-- next-url -->
-[Unreleased]: https://github.com/svenstaro/wiresmith/compare/v0.4.3...HEAD
+[Unreleased]: https://github.com/svenstaro/wiresmith/compare/v0.4.4...HEAD
+[0.4.4]: https://github.com/svenstaro/wiresmith/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/svenstaro/wiresmith/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/svenstaro/wiresmith/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/svenstaro/wiresmith/compare/v0.4.0...v0.4.1
