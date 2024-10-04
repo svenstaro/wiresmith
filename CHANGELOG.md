@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+- Fix container images accidentally containing glibc rather than musl binaries [#215](https://github.com/svenstaro/wiresmith/issues/215)
 
 ## [0.4.3] - 2024-08-30
 - Fix Consul lock session "leak" when the inner loop performed an early return [#212](https://github.com/svenstaro/wiresmith/pull/212)
