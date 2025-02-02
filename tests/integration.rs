@@ -531,7 +531,7 @@ async fn deletes_peer_on_timeout(
     assert_eq!(consul_peers.len(), peers.len());
 
     // Kill a random peer.
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     peers.shuffle(&mut rng);
     let (random_peer, remaining_peers) = peers.split_first().expect("Peers are empty.");
     Command::new("podman")
