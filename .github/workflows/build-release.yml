@@ -30,7 +30,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -45,7 +45,7 @@ jobs:
           target: ${{ matrix.target }}
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.target }}
           path: target/${{ matrix.target }}/release/wiresmith
@@ -90,25 +90,25 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install qemu-user-static
         run: sudo apt update && sudo apt install qemu-user-static
 
       - name: Download artifact aarch64-unknown-linux-musl
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: aarch64-unknown-linux-musl
           path: target/aarch64-unknown-linux-musl/release
 
       - name: Download artifact x86_64-unknown-linux-musl
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: x86_64-unknown-linux-musl
           path: target/x86_64-unknown-linux-musl/release
 
       - name: Download artifact armv7-unknown-linux-musleabihf
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: armv7-unknown-linux-musleabihf
           path: target/armv7-unknown-linux-musleabihf/release
