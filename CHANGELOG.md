@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 <!-- next-header -->
 
 ## [Unreleased] - ReleaseDate
+- Bump deps
 
 ## [0.4.4] - 2024-10-04
 - Fix container images accidentally containing glibc rather than musl binaries [#215](https://github.com/svenstaro/wiresmith/issues/215)
